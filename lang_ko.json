@@ -81,6 +81,7 @@
   "settings": "설정",
   "edit_translations": "번역 편집",
   "translation_editor": "번역 편집기",
+  "batch_config_title": "일괄 다운로드 설정",
   "save": "저장",
   "cancel": "취소",
 

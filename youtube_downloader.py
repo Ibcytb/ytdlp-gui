@@ -342,36 +342,36 @@ class YouTubeDownloaderGUI:
         format_select_frame = ctk.CTkFrame(format_frame)
         format_select_frame.pack(padx=10, pady=(0, 10), fill="x")
 
-        self.format_var = ctk.StringVar(value="video")
-        format_radio1 = ctk.CTkRadioButton(
+        # Use checkboxes instead of radio buttons for multiple selection
+        self.download_video_var = ctk.BooleanVar(value=True)
+        format_check1 = ctk.CTkCheckBox(
             format_select_frame,
             text=self.lang.get("video"),
-            variable=self.format_var,
-            value="video",
+            variable=self.download_video_var,
             command=self.toggle_options,
             font=ctk.CTkFont(size=13)
         )
-        format_radio1.pack(side="left", padx=20, pady=10)
+        format_check1.pack(side="left", padx=20, pady=10)
 
-        format_radio2 = ctk.CTkRadioButton(
+        self.download_audio_var = ctk.BooleanVar(value=False)
+        format_check2 = ctk.CTkCheckBox(
             format_select_frame,
             text=self.lang.get("audio_only"),
-            variable=self.format_var,
-            value="audio",
+            variable=self.download_audio_var,
             command=self.toggle_options,
             font=ctk.CTkFont(size=13)
         )
-        format_radio2.pack(side="left", padx=20, pady=10)
+        format_check2.pack(side="left", padx=20, pady=10)
 
-        format_radio3 = ctk.CTkRadioButton(
+        self.download_thumbnail_var = ctk.BooleanVar(value=False)
+        format_check3 = ctk.CTkCheckBox(
             format_select_frame,
             text=self.lang.get("thumbnail_only"),
-            variable=self.format_var,
-            value="thumbnail",
+            variable=self.download_thumbnail_var,
             command=self.toggle_options,
             font=ctk.CTkFont(size=13)
         )
-        format_radio3.pack(side="left", padx=20, pady=10)
+        format_check3.pack(side="left", padx=20, pady=10)
 
         # Embed Options Frame
         embed_frame = ctk.CTkFrame(format_frame)
@@ -633,14 +633,26 @@ class YouTubeDownloaderGUI:
         """Bind mousewheel for faster scrolling"""
         def on_mousewheel(event):
             # Scroll 5 lines at a time (default is 1)
-            widget._parent_canvas.yview_scroll(int(-5 * (event.delta / 120)), "units")
+            # CTkTextbox uses internal _textbox widget
+            if hasattr(widget, '_textbox'):
+                widget._textbox.yview_scroll(int(-5 * (event.delta / 120)), "units")
+            return "break"
+
+        def on_scroll_up(event):
+            if hasattr(widget, '_textbox'):
+                widget._textbox.yview_scroll(-5, "units")
+            return "break"
+
+        def on_scroll_down(event):
+            if hasattr(widget, '_textbox'):
+                widget._textbox.yview_scroll(5, "units")
             return "break"
 
         # Bind for Windows and Linux
         widget.bind("<MouseWheel>", on_mousewheel)
         # Bind for Linux (alternative)
-        widget.bind("<Button-4>", lambda e: widget._parent_canvas.yview_scroll(-5, "units"))
-        widget.bind("<Button-5>", lambda e: widget._parent_canvas.yview_scroll(5, "units"))
+        widget.bind("<Button-4>", on_scroll_up)
+        widget.bind("<Button-5>", on_scroll_down)
 
     def change_language(self, choice):
         """Change application language"""
@@ -757,15 +769,17 @@ class YouTubeDownloaderGUI:
         self.video_audio_values = self.audio_quality_values.copy()
 
     def toggle_options(self):
-        """Toggle between video, audio, and thumbnail options"""
-        if self.format_var.get() == "video":
+        """Toggle between video, audio, and thumbnail options based on checkboxes"""
+        # Show video options if video is checked
+        if self.download_video_var.get():
             self.video_options_frame.pack(pady=10, padx=20, fill="x", after=self.video_options_frame.master.children[list(self.video_options_frame.master.children.keys())[3]])
-            self.audio_options_frame.pack_forget()
-        elif self.format_var.get() == "audio":
+        else:
             self.video_options_frame.pack_forget()
+
+        # Show audio options if audio is checked
+        if self.download_audio_var.get():
             self.audio_options_frame.pack(pady=10, padx=20, fill="x", after=self.audio_options_frame.master.children[list(self.audio_options_frame.master.children.keys())[3]])
-        else:  # thumbnail
-            self.video_options_frame.pack_forget()
+        else:
             self.audio_options_frame.pack_forget()
 
     def analyze_video(self):
@@ -1037,13 +1051,160 @@ class YouTubeDownloaderGUI:
             )
             return
 
-        # Disable download button
-        self.download_button.configure(state="disabled")
+        # If multiple URLs, open batch configuration window
+        if len(urls) > 1:
+            self.open_batch_config_window(urls)
+        else:
+            # Single URL - use current settings
+            self.download_button.configure(state="disabled")
+            thread = threading.Thread(target=self.download_single_with_types, args=(urls[0],))
+            thread.daemon = True
+            thread.start()
 
-        # Start download in separate thread
-        thread = threading.Thread(target=self.download_multiple_videos, args=(urls,))
-        thread.daemon = True
-        thread.start()
+    def open_batch_config_window(self, urls):
+        """Open window to configure download options for each URL"""
+        config_window = ctk.CTkToplevel(self.window)
+        config_window.title(self.lang.get("batch_config_title") if hasattr(self.lang, 'translations') and "batch_config_title" in self.lang.translations else "Batch Download Configuration")
+        config_window.geometry("900x600")
+
+        # Analyze all URLs first
+        self.log_message("Analyzing videos...")
+        video_info_list = []
+
+        for url in urls:
+            try:
+                cmd = ["yt-dlp", "-J", "--no-playlist", url]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    title = data.get("title", "Unknown")
+                    duration = data.get("duration", 0)
+                    duration_str = f"{int(duration//60)}:{int(duration%60):02d}" if duration else "Unknown"
+
+                    video_info_list.append({
+                        "url": url,
+                        "title": title,
+                        "duration": duration_str,
+                        "download_video": ctk.BooleanVar(value=self.download_video_var.get()),
+                        "download_audio": ctk.BooleanVar(value=self.download_audio_var.get()),
+                        "download_thumbnail": ctk.BooleanVar(value=self.download_thumbnail_var.get())
+                    })
+                else:
+                    video_info_list.append({
+                        "url": url,
+                        "title": "Error analyzing",
+                        "duration": "Unknown",
+                        "download_video": ctk.BooleanVar(value=True),
+                        "download_audio": ctk.BooleanVar(value=False),
+                        "download_thumbnail": ctk.BooleanVar(value=False)
+                    })
+            except Exception as e:
+                video_info_list.append({
+                    "url": url,
+                    "title": f"Error: {str(e)}",
+                    "duration": "Unknown",
+                    "download_video": ctk.BooleanVar(value=True),
+                    "download_audio": ctk.BooleanVar(value=False),
+                    "download_thumbnail": ctk.BooleanVar(value=False)
+                })
+
+        # Create scrollable frame for video list
+        scroll_frame = ctk.CTkScrollableFrame(config_window)
+        scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
+
+        # Header
+        header_frame = ctk.CTkFrame(scroll_frame)
+        header_frame.pack(fill="x", padx=5, pady=5)
+
+        ctk.CTkLabel(header_frame, text="Title", font=ctk.CTkFont(weight="bold"), width=300).grid(row=0, column=0, padx=5)
+        ctk.CTkLabel(header_frame, text="Duration", font=ctk.CTkFont(weight="bold"), width=80).grid(row=0, column=1, padx=5)
+        ctk.CTkLabel(header_frame, text="Video", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=2, padx=5)
+        ctk.CTkLabel(header_frame, text="Audio", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=3, padx=5)
+        ctk.CTkLabel(header_frame, text="Thumbnail", font=ctk.CTkFont(weight="bold"), width=80).grid(row=0, column=4, padx=5)
+
+        # Video rows
+        for info in video_info_list:
+            row_frame = ctk.CTkFrame(scroll_frame)
+            row_frame.pack(fill="x", padx=5, pady=2)
+
+            title_label = ctk.CTkLabel(row_frame, text=info["title"][:50] + "..." if len(info["title"]) > 50 else info["title"], width=300, anchor="w")
+            title_label.grid(row=0, column=0, padx=5, sticky="w")
+
+            duration_label = ctk.CTkLabel(row_frame, text=info["duration"], width=80)
+            duration_label.grid(row=0, column=1, padx=5)
+
+            video_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_video"], width=60)
+            video_check.grid(row=0, column=2, padx=5)
+
+            audio_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_audio"], width=60)
+            audio_check.grid(row=0, column=3, padx=5)
+
+            thumb_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_thumbnail"], width=80)
+            thumb_check.grid(row=0, column=4, padx=5)
+
+        # Button frame
+        button_frame = ctk.CTkFrame(config_window)
+        button_frame.pack(pady=10, padx=10, fill="x")
+
+        def start_batch_download():
+            """Start downloading all configured videos"""
+            config_window.destroy()
+            self.download_button.configure(state="disabled")
+            thread = threading.Thread(target=self.download_batch_with_config, args=(video_info_list,))
+            thread.daemon = True
+            thread.start()
+
+        start_button = ctk.CTkButton(button_frame, text=self.lang.get("download"), command=start_batch_download)
+        start_button.pack(side="left", padx=5)
+
+        cancel_button = ctk.CTkButton(button_frame, text=self.lang.get("cancel"), command=config_window.destroy)
+        cancel_button.pack(side="left", padx=5)
+
+    def download_batch_with_config(self, video_info_list):
+        """Download multiple videos with individual configurations"""
+        total = len(video_info_list)
+        for i, info in enumerate(video_info_list, 1):
+            self.log_message(f"\n{'='*50}")
+            self.log_message(f"Downloading {i}/{total}: {info['title']}")
+            self.log_message(f"{'='*50}\n")
+
+            # Download each selected type
+            if info["download_video"].get():
+                self.log_message("Downloading video...")
+                self.download_video(info["url"], download_type="video")
+
+            if info["download_audio"].get():
+                self.log_message("Downloading audio...")
+                self.download_video(info["url"], download_type="audio")
+
+            if info["download_thumbnail"].get():
+                self.log_message("Downloading thumbnail...")
+                self.download_video(info["url"], download_type="thumbnail")
+
+        self.download_button.configure(state="normal")
+        self.log_message("\n" + "="*50)
+        self.log_message("All downloads completed!")
+        self.log_message("="*50 + "\n")
+
+    def download_single_with_types(self, url):
+        """Download single URL with selected types"""
+        try:
+            # Download each selected type
+            if self.download_video_var.get():
+                self.log_message("Downloading video...")
+                self.download_video(url, download_type="video")
+
+            if self.download_audio_var.get():
+                self.log_message("Downloading audio...")
+                self.download_video(url, download_type="audio")
+
+            if self.download_thumbnail_var.get():
+                self.log_message("Downloading thumbnail...")
+                self.download_video(url, download_type="thumbnail")
+
+        finally:
+            self.download_button.configure(state="normal")
 
     def download_multiple_videos(self, urls):
         """Download multiple videos sequentially"""
@@ -1107,9 +1268,6 @@ class YouTubeDownloaderGUI:
 
     def build_format_string(self):
         """Build yt-dlp format string based on user selections"""
-        if self.format_var.get() == "audio":
-            return None  # Audio format is handled separately
-
         # Video format
         video_selector = "bestvideo"
 
@@ -1137,7 +1295,7 @@ class YouTubeDownloaderGUI:
 
         return format_string
 
-    def download_video(self, url):
+    def download_video(self, url, download_type=None):
         try:
             self.log_message(f"Starting download: {url}")
             self.progress_label.configure(text=self.lang.get("downloading"))
@@ -1157,13 +1315,25 @@ class YouTubeDownloaderGUI:
                     cmd.extend(["--cookies-from-browser", browser_profile])
                     self.log_message(f"Using cookies from: {browser_profile}")
 
+            # Determine download type
+            if download_type is None:
+                # Use checkbox settings if no type specified
+                if self.download_thumbnail_var.get():
+                    download_type = "thumbnail"
+                elif self.download_audio_var.get():
+                    download_type = "audio"
+                elif self.download_video_var.get():
+                    download_type = "video"
+                else:
+                    download_type = "video"  # Default
+
             # Add format options
-            if self.format_var.get() == "thumbnail":
+            if download_type == "thumbnail":
                 # Thumbnail only download
                 cmd.extend(["--write-thumbnail", "--skip-download"])
                 self.log_message(f"Format: Thumbnail only")
 
-            elif self.format_var.get() == "audio":
+            elif download_type == "audio":
                 # Audio download
                 audio_format = self.audio_format_var.get()
                 if audio_format == self.lang.get("custom_format"):
@@ -1203,7 +1373,7 @@ class YouTubeDownloaderGUI:
                 self.log_message(f"Container: {container.upper()}")
 
             # Add embed options (for video and audio only, not for thumbnail-only mode)
-            if self.format_var.get() != "thumbnail":
+            if download_type != "thumbnail":
                 if self.embed_thumbnail_var.get():
                     cmd.extend(["--embed-thumbnail"])
                     self.log_message("Embedding thumbnail")

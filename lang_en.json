@@ -1,6 +1,7 @@
 {
   "app_title": "YouTube Downloader Pro (yt-dlp)",
   "video_url": "Video URL:",
+  "multi_url_info": "Enter one URL per line for batch download",
   "analyze": "Analyze",
   "analyzing": "Analyzing video...",
   "analysis_complete": "Max Quality: {height}p | Max Audio: {audio} kbps | Title: {title}",
@@ -78,6 +79,10 @@
 
   "language": "Language:",
   "settings": "Settings",
+  "edit_translations": "Edit Translations",
+  "translation_editor": "Translation Editor",
+  "save": "Save",
+  "cancel": "Cancel",
 
   "error_no_url": "Please enter a video URL",
   "error_invalid_url": "Please enter a valid URL",

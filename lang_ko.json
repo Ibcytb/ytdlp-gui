@@ -1,6 +1,7 @@
 {
   "app_title": "YouTube 다운로더 Pro (yt-dlp)",
   "video_url": "비디오 URL:",
+  "multi_url_info": "여러 개 다운로드 시 한 줄에 하나씩 URL 입력",
   "analyze": "분석",
   "analyzing": "비디오 분석 중...",
   "analysis_complete": "최대 화질: {height}p | 최대 음질: {audio} kbps | 제목: {title}",
@@ -78,6 +79,10 @@
 
   "language": "언어:",
   "settings": "설정",
+  "edit_translations": "번역 편집",
+  "translation_editor": "번역 편집기",
+  "save": "저장",
+  "cancel": "취소",
 
   "error_no_url": "비디오 URL을 입력하세요",
   "error_invalid_url": "올바른 URL을 입력하세요",

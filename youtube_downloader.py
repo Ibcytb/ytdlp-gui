@@ -6,6 +6,7 @@ import threading
 import subprocess
 import json
 import re
+import platform
 from pathlib import Path
 
 # Set appearance
@@ -20,11 +21,17 @@ class LanguageManager:
         self.load_language(lang_code)
 
     def load_language(self, lang_code):
-        """Load language file"""
-        lang_file = Path(__file__).parent / f"lang_{lang_code}.json"
+        """Load language file (.lang format)"""
+        lang_file = Path(__file__).parent / f"lang_{lang_code}.lang"
         try:
             with open(lang_file, 'r', encoding='utf-8') as f:
-                self.translations = json.load(f)
+                for line in f:
+                    line = line.strip()
+                    # Skip comments and empty lines
+                    if line and not line.startswith('#'):
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            self.translations[key.strip()] = value.strip()
             self.lang_code = lang_code
         except FileNotFoundError:
             print(f"Language file not found: {lang_file}")
@@ -38,6 +45,85 @@ class LanguageManager:
         if kwargs:
             return text.format(**kwargs)
         return text
+
+
+class BrowserDetector:
+    """Detect installed browsers and their profiles"""
+
+    @staticmethod
+    def get_user_home():
+        """Get user home directory"""
+        return Path.home()
+
+    @staticmethod
+    def detect_browsers():
+        """Detect installed browsers on the system"""
+        browsers = {}
+        home = BrowserDetector.get_user_home()
+        system = platform.system()
+
+        if system == "Windows":
+            browser_paths = {
+                "chrome": home / "AppData/Local/Google/Chrome/User Data",
+                "firefox": home / "AppData/Roaming/Mozilla/Firefox/Profiles",
+                "edge": home / "AppData/Local/Microsoft/Edge/User Data",
+                "opera": home / "AppData/Roaming/Opera Software/Opera Stable",
+                "brave": home / "AppData/Local/BraveSoftware/Brave-Browser/User Data",
+                "chromium": home / "AppData/Local/Chromium/User Data",
+            }
+        elif system == "Darwin":  # macOS
+            browser_paths = {
+                "chrome": home / "Library/Application Support/Google/Chrome",
+                "firefox": home / "Library/Application Support/Firefox/Profiles",
+                "edge": home / "Library/Application Support/Microsoft Edge",
+                "opera": home / "Library/Application Support/com.operasoftware.Opera",
+                "brave": home / "Library/Application Support/BraveSoftware/Brave-Browser",
+                "safari": home / "Library/Safari",
+                "chromium": home / "Library/Application Support/Chromium",
+            }
+        else:  # Linux
+            browser_paths = {
+                "chrome": home / ".config/google-chrome",
+                "firefox": home / ".mozilla/firefox",
+                "chromium": home / ".config/chromium",
+                "opera": home / ".config/opera",
+                "brave": home / ".config/BraveSoftware/Brave-Browser",
+            }
+
+        for browser, path in browser_paths.items():
+            if path.exists():
+                browsers[browser] = path
+
+        return browsers
+
+    @staticmethod
+    def get_profiles(browser_name, browser_path):
+        """Get user profiles for a specific browser"""
+        profiles = []
+
+        try:
+            if browser_name == "firefox":
+                # Firefox profiles are in subdirectories
+                if browser_path.exists():
+                    for profile_dir in browser_path.iterdir():
+                        if profile_dir.is_dir() and not profile_dir.name.startswith('.'):
+                            profiles.append(profile_dir.name)
+            else:
+                # Chromium-based browsers
+                if browser_path.exists():
+                    # Check for Default profile
+                    if (browser_path / "Default").exists():
+                        profiles.append("Default")
+
+                    # Check for Profile 1, Profile 2, etc.
+                    profile_num = 1
+                    while (browser_path / f"Profile {profile_num}").exists():
+                        profiles.append(f"Profile {profile_num}")
+                        profile_num += 1
+        except Exception as e:
+            print(f"Error getting profiles for {browser_name}: {e}")
+
+        return profiles if profiles else ["Default"]
 
 
 class YouTubeDownloaderGUI:
@@ -60,6 +146,10 @@ class YouTubeDownloaderGUI:
         # Auto-analysis flag
         self.auto_analyzing = False
         self.last_url = ""
+
+        # Detect installed browsers
+        self.browsers = BrowserDetector.detect_browsers()
+        self.browser_profiles = {}
 
         # Set responsive window size
         self.set_responsive_size()
@@ -206,28 +296,37 @@ class YouTubeDownloaderGUI:
         browser_label = ctk.CTkLabel(cookie_options_frame, text=self.lang.get("browser"), font=ctk.CTkFont(size=12))
         browser_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
-        self.browser_var = ctk.StringVar(value="chrome")
+        # Get list of detected browsers or show message
+        browser_list = list(self.browsers.keys()) if self.browsers else [self.lang.get("no_browsers_found")]
+        default_browser = browser_list[0] if browser_list else ""
+
+        self.browser_var = ctk.StringVar(value=default_browser)
         self.browser_menu = ctk.CTkComboBox(
             cookie_options_frame,
-            values=["chrome", "firefox", "edge", "opera", "brave", "chromium", "safari"],
+            values=browser_list,
             variable=self.browser_var,
             width=150,
-            state="disabled"
+            state="disabled",
+            command=self.on_browser_change
         )
         self.browser_menu.grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
         profile_label = ctk.CTkLabel(cookie_options_frame, text=self.lang.get("profile"), font=ctk.CTkFont(size=12))
         profile_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
-        self.profile_var = ctk.StringVar(value=self.lang.get("current_user"))
+        self.profile_var = ctk.StringVar(value="Default")
         self.profile_menu = ctk.CTkComboBox(
             cookie_options_frame,
-            values=[self.lang.get("current_user"), self.lang.get("other_user")],
+            values=["Default"],
             variable=self.profile_var,
             width=150,
             state="disabled"
         )
         self.profile_menu.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="w")
+
+        # Load initial profiles
+        if self.browsers and default_browser:
+            self.load_browser_profiles(default_browser)
 
         # Format Selection Frame
         format_frame = ctk.CTkFrame(self.main_frame)
@@ -474,6 +573,27 @@ class YouTubeDownloaderGUI:
             self.browser_menu.configure(state="disabled")
             self.profile_menu.configure(state="disabled")
 
+    def on_browser_change(self, choice=None):
+        """Handle browser selection change"""
+        browser_name = self.browser_var.get()
+        if browser_name and browser_name != self.lang.get("no_browsers_found"):
+            self.load_browser_profiles(browser_name)
+
+    def load_browser_profiles(self, browser_name):
+        """Load profiles for selected browser"""
+        if browser_name in self.browsers:
+            browser_path = self.browsers[browser_name]
+            profiles = BrowserDetector.get_profiles(browser_name, browser_path)
+            self.browser_profiles[browser_name] = profiles
+
+            # Update profile menu
+            if profiles:
+                self.profile_menu.configure(values=profiles)
+                self.profile_var.set(profiles[0])
+            else:
+                self.profile_menu.configure(values=["Default"])
+                self.profile_var.set("Default")
+
     def on_url_change(self, event=None):
         """Detect URL change and trigger auto-analysis"""
         current_url = self.url_entry.get().strip()
@@ -582,7 +702,10 @@ class YouTubeDownloaderGUI:
             # Add cookie options if enabled
             if self.use_cookies_var.get():
                 browser = self.browser_var.get()
-                cmd.extend(["--cookies-from-browser", browser])
+                profile = self.profile_var.get()
+                if browser and browser != self.lang.get("no_browsers_found"):
+                    browser_profile = f"{browser}:{profile}" if profile and profile != "Default" else browser
+                    cmd.extend(["--cookies-from-browser", browser_profile])
 
             result = subprocess.run(
                 cmd,
@@ -834,8 +957,11 @@ class YouTubeDownloaderGUI:
             # Add cookie options if enabled
             if self.use_cookies_var.get():
                 browser = self.browser_var.get()
-                cmd.extend(["--cookies-from-browser", browser])
-                self.log_message(f"Using cookies from: {browser}")
+                profile = self.profile_var.get()
+                if browser and browser != self.lang.get("no_browsers_found"):
+                    browser_profile = f"{browser}:{profile}" if profile and profile != "Default" else browser
+                    cmd.extend(["--cookies-from-browser", browser_profile])
+                    self.log_message(f"Using cookies from: {browser_profile}")
 
             # Add format options
             if self.format_var.get() == "audio":

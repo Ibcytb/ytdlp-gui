@@ -75,6 +75,7 @@
   "error_occurred": "Error occurred",
 
   "download": "Download",
+  "batch_download_button": "Batch Download & Configure",
   "log": "Log:",
 
   "language": "Language:",

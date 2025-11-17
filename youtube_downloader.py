@@ -351,13 +351,13 @@ class YouTubeDownloaderGUI:
             self.load_browser_profiles(default_browser)
 
         # Format Selection Frame
-        format_frame = ctk.CTkFrame(self.main_frame)
-        format_frame.pack(pady=10, padx=20, fill="x")
+        self.format_frame = ctk.CTkFrame(self.main_frame)
+        self.format_frame.pack(pady=10, padx=20, fill="x")
 
-        format_title = ctk.CTkLabel(format_frame, text=self.lang.get("download_type"), font=ctk.CTkFont(size=14, weight="bold"))
+        format_title = ctk.CTkLabel(self.format_frame, text=self.lang.get("download_type"), font=ctk.CTkFont(size=14, weight="bold"))
         format_title.pack(anchor="w", padx=10, pady=(10, 5))
 
-        format_select_frame = ctk.CTkFrame(format_frame)
+        format_select_frame = ctk.CTkFrame(self.format_frame)
         format_select_frame.pack(padx=10, pady=(0, 10), fill="x")
 
         # Use checkboxes instead of radio buttons for multiple selection
@@ -392,7 +392,7 @@ class YouTubeDownloaderGUI:
         format_check3.pack(side="left", padx=20, pady=10)
 
         # Embed Options Frame
-        embed_frame = ctk.CTkFrame(format_frame)
+        embed_frame = ctk.CTkFrame(self.format_frame)
         embed_frame.pack(padx=10, pady=(0, 10), fill="x")
 
         embed_title = ctk.CTkLabel(
@@ -687,13 +687,17 @@ class YouTubeDownloaderGUI:
     def on_url_change(self, event=None):
         """Detect URL change and trigger auto-analysis"""
         current_text = self.url_entry.get("1.0", "end").strip()
-        # Get first valid URL
-        current_url = ""
-        for line in current_text.split('\n'):
-            line = line.strip()
-            if line and line.startswith("http") and "youtube.com/watch?v=..." not in line:
-                current_url = line
-                break
+
+        # Get all valid URLs
+        urls = [line.strip() for line in current_text.split('\n')
+                if line.strip() and line.strip().startswith("http")
+                and "youtube.com/watch?v=..." not in line]
+
+        # Update UI based on URL count
+        self.update_ui_for_url_count(len(urls))
+
+        # Get first valid URL for auto-analysis
+        current_url = urls[0] if urls else ""
 
         if current_url and current_url != self.last_url:
             self.last_url = current_url
@@ -704,6 +708,35 @@ class YouTubeDownloaderGUI:
         """Detect paste event"""
         # Wait for paste to complete
         self.window.after(100, self.on_url_change)
+
+    def update_ui_for_url_count(self, url_count):
+        """Update UI based on number of URLs"""
+        if url_count > 1:
+            # Multiple URLs - hide download type section and change button text
+            self.format_frame.pack_forget()
+            self.video_options_frame.pack_forget()
+            self.audio_options_frame.pack_forget()
+            self.download_button.configure(text=self.lang.get("batch_download_button")
+                                          if "batch_download_button" in self.lang.translations
+                                          else "일괄 다운로드 및 옵션 변경")
+        else:
+            # Single or no URL - show normal UI
+            try:
+                # Check if format_frame is currently visible
+                self.format_frame.winfo_manager()
+            except:
+                # If not visible, show it
+                # Insert format_frame after URL frame (which is at index 2)
+                children = list(self.main_frame.children.values())
+                if len(children) >= 3:
+                    self.format_frame.pack(pady=10, padx=20, fill="x", after=children[2])
+                else:
+                    self.format_frame.pack(pady=10, padx=20, fill="x")
+
+            self.download_button.configure(text=self.lang.get("download"))
+
+            # Update options visibility based on checkboxes
+            self.toggle_options()
 
     def auto_analyze_video(self, url):
         """Automatically analyze video when URL is pasted"""

@@ -13,10 +13,41 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 
+class LanguageManager:
+    def __init__(self, lang_code="ko"):
+        self.lang_code = lang_code
+        self.translations = {}
+        self.load_language(lang_code)
+
+    def load_language(self, lang_code):
+        """Load language file"""
+        lang_file = Path(__file__).parent / f"lang_{lang_code}.json"
+        try:
+            with open(lang_file, 'r', encoding='utf-8') as f:
+                self.translations = json.load(f)
+            self.lang_code = lang_code
+        except FileNotFoundError:
+            print(f"Language file not found: {lang_file}")
+            # Fallback to English
+            if lang_code != "en":
+                self.load_language("en")
+
+    def get(self, key, **kwargs):
+        """Get translated text"""
+        text = self.translations.get(key, key)
+        if kwargs:
+            return text.format(**kwargs)
+        return text
+
+
 class YouTubeDownloaderGUI:
     def __init__(self):
         self.window = ctk.CTk()
-        self.window.title("YouTube Downloader Pro (yt-dlp)")
+
+        # Language manager
+        self.lang = LanguageManager("ko")  # Default Korean
+
+        self.window.title(self.lang.get("app_title"))
 
         # Default download path
         self.download_path = str(Path.home() / "Downloads")
@@ -26,8 +57,15 @@ class YouTubeDownloaderGUI:
         self.max_height = None
         self.max_audio_bitrate = None
 
+        # Auto-analysis flag
+        self.auto_analyzing = False
+        self.last_url = ""
+
         # Set responsive window size
         self.set_responsive_size()
+
+        # Check and update yt-dlp
+        self.check_ytdlp_update()
 
         # Initialize UI
         self.create_widgets()
@@ -40,16 +78,16 @@ class YouTubeDownloaderGUI:
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
 
-        # Calculate appropriate window size (60% of screen height, maintain aspect ratio)
-        window_height = min(int(screen_height * 0.75), 1000)
-        window_width = min(int(window_height * 0.9), 900)
+        # Calculate appropriate window size
+        window_height = min(int(screen_height * 0.80), 1100)
+        window_width = min(int(window_height * 0.9), 950)
 
         # Ensure minimum size
-        window_width = max(window_width, 700)
-        window_height = max(window_height, 700)
+        window_width = max(window_width, 750)
+        window_height = max(window_height, 750)
 
         self.window.geometry(f"{window_width}x{window_height}")
-        self.window.minsize(700, 700)
+        self.window.minsize(750, 750)
 
     def center_window(self):
         self.window.update_idletasks()
@@ -59,46 +97,83 @@ class YouTubeDownloaderGUI:
         y = (self.window.winfo_screenheight() // 2) - (height // 2)
         self.window.geometry(f'{width}x{height}+{x}+{y}')
 
+    def check_ytdlp_update(self):
+        """Check and update yt-dlp at startup"""
+        def update_thread():
+            try:
+                # Check if yt-dlp is installed
+                result = subprocess.run(
+                    ["yt-dlp", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    # Update yt-dlp
+                    subprocess.run(
+                        ["yt-dlp", "-U"],
+                        capture_output=True,
+                        timeout=30
+                    )
+            except:
+                pass
+
+        thread = threading.Thread(target=update_thread)
+        thread.daemon = True
+        thread.start()
+
     def create_widgets(self):
         # Create scrollable frame
         self.main_frame = ctk.CTkScrollableFrame(self.window)
         self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Title
+        # Top bar with title and settings
+        top_frame = ctk.CTkFrame(self.main_frame)
+        top_frame.pack(pady=(10, 20), padx=20, fill="x")
+
         title_label = ctk.CTkLabel(
-            self.main_frame,
-            text="YouTube Downloader Pro",
+            top_frame,
+            text=self.lang.get("app_title").split("(")[0].strip(),
             font=ctk.CTkFont(size=28, weight="bold")
         )
-        title_label.pack(pady=20)
+        title_label.pack(side="left", padx=10)
+
+        # Language selector
+        lang_frame = ctk.CTkFrame(top_frame)
+        lang_frame.pack(side="right", padx=10)
+
+        lang_label = ctk.CTkLabel(lang_frame, text=self.lang.get("language"), font=ctk.CTkFont(size=12))
+        lang_label.pack(side="left", padx=5)
+
+        self.lang_var = ctk.StringVar(value="한국어")
+        lang_menu = ctk.CTkComboBox(
+            lang_frame,
+            values=["English", "한국어"],
+            variable=self.lang_var,
+            command=self.change_language,
+            width=100
+        )
+        lang_menu.pack(side="left", padx=5)
 
         # URL Frame
         url_frame = ctk.CTkFrame(self.main_frame)
         url_frame.pack(pady=10, padx=20, fill="x")
 
-        url_label = ctk.CTkLabel(url_frame, text="Video URL:", font=ctk.CTkFont(size=14, weight="bold"))
+        url_label = ctk.CTkLabel(url_frame, text=self.lang.get("video_url"), font=ctk.CTkFont(size=14, weight="bold"))
         url_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        url_input_frame = ctk.CTkFrame(url_frame)
-        url_input_frame.pack(padx=10, pady=(0, 10), fill="x")
-
         self.url_entry = ctk.CTkEntry(
-            url_input_frame,
+            url_frame,
             placeholder_text="https://www.youtube.com/watch?v=...",
             height=40,
             font=ctk.CTkFont(size=12)
         )
-        self.url_entry.pack(side="left", padx=(0, 5), fill="x", expand=True)
+        self.url_entry.pack(padx=10, pady=(0, 10), fill="x")
 
-        self.analyze_button = ctk.CTkButton(
-            url_input_frame,
-            text="Analyze",
-            command=self.analyze_video,
-            width=100,
-            height=40,
-            font=ctk.CTkFont(size=13, weight="bold")
-        )
-        self.analyze_button.pack(side="right")
+        # Bind URL entry to detect paste
+        self.url_entry.bind('<KeyRelease>', self.on_url_change)
+        self.url_entry.bind('<<Paste>>', self.on_url_paste)
 
         # Analysis Status Label
         self.analysis_status = ctk.CTkLabel(
@@ -109,11 +184,56 @@ class YouTubeDownloaderGUI:
         )
         self.analysis_status.pack(padx=10, pady=(0, 10))
 
+        # Cookie Settings Frame
+        cookie_frame = ctk.CTkFrame(self.main_frame)
+        cookie_frame.pack(pady=10, padx=20, fill="x")
+
+        cookie_title = ctk.CTkLabel(cookie_frame, text=self.lang.get("cookie_settings"), font=ctk.CTkFont(size=14, weight="bold"))
+        cookie_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        cookie_options_frame = ctk.CTkFrame(cookie_frame)
+        cookie_options_frame.pack(padx=10, pady=(0, 10), fill="x")
+
+        self.use_cookies_var = ctk.BooleanVar(value=False)
+        cookie_check = ctk.CTkCheckBox(
+            cookie_options_frame,
+            text=self.lang.get("use_cookies"),
+            variable=self.use_cookies_var,
+            command=self.toggle_cookie_options
+        )
+        cookie_check.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+
+        browser_label = ctk.CTkLabel(cookie_options_frame, text=self.lang.get("browser"), font=ctk.CTkFont(size=12))
+        browser_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+        self.browser_var = ctk.StringVar(value="chrome")
+        self.browser_menu = ctk.CTkComboBox(
+            cookie_options_frame,
+            values=["chrome", "firefox", "edge", "opera", "brave", "chromium", "safari"],
+            variable=self.browser_var,
+            width=150,
+            state="disabled"
+        )
+        self.browser_menu.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
+        profile_label = ctk.CTkLabel(cookie_options_frame, text=self.lang.get("profile"), font=ctk.CTkFont(size=12))
+        profile_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+
+        self.profile_var = ctk.StringVar(value=self.lang.get("current_user"))
+        self.profile_menu = ctk.CTkComboBox(
+            cookie_options_frame,
+            values=[self.lang.get("current_user"), self.lang.get("other_user")],
+            variable=self.profile_var,
+            width=150,
+            state="disabled"
+        )
+        self.profile_menu.grid(row=2, column=1, padx=10, pady=(5, 10), sticky="w")
+
         # Format Selection Frame
         format_frame = ctk.CTkFrame(self.main_frame)
         format_frame.pack(pady=10, padx=20, fill="x")
 
-        format_title = ctk.CTkLabel(format_frame, text="Download Type:", font=ctk.CTkFont(size=14, weight="bold"))
+        format_title = ctk.CTkLabel(format_frame, text=self.lang.get("download_type"), font=ctk.CTkFont(size=14, weight="bold"))
         format_title.pack(anchor="w", padx=10, pady=(10, 5))
 
         format_select_frame = ctk.CTkFrame(format_frame)
@@ -122,7 +242,7 @@ class YouTubeDownloaderGUI:
         self.format_var = ctk.StringVar(value="video")
         format_radio1 = ctk.CTkRadioButton(
             format_select_frame,
-            text="Video",
+            text=self.lang.get("video"),
             variable=self.format_var,
             value="video",
             command=self.toggle_options,
@@ -132,7 +252,7 @@ class YouTubeDownloaderGUI:
 
         format_radio2 = ctk.CTkRadioButton(
             format_select_frame,
-            text="Audio Only",
+            text=self.lang.get("audio_only"),
             variable=self.format_var,
             value="audio",
             command=self.toggle_options,
@@ -146,91 +266,134 @@ class YouTubeDownloaderGUI:
 
         video_title = ctk.CTkLabel(
             self.video_options_frame,
-            text="Video Options:",
+            text=self.lang.get("video_options"),
             font=ctk.CTkFont(size=14, weight="bold")
         )
         video_title.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 15), sticky="w")
 
         # Video Quality
-        quality_label = ctk.CTkLabel(self.video_options_frame, text="Quality:", font=ctk.CTkFont(size=13))
+        quality_label = ctk.CTkLabel(self.video_options_frame, text=self.lang.get("quality"), font=ctk.CTkFont(size=13))
         quality_label.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        self.video_quality_var = ctk.StringVar(value="best")
+        self.video_quality_var = ctk.StringVar(value=self.lang.get("quality_best"))
+        self.quality_values = []
+        self.update_quality_display()
+
         self.quality_menu = ctk.CTkComboBox(
             self.video_options_frame,
-            values=["best", "8K (4320p)", "4K (2160p)", "2K (1440p)", "1080p", "720p", "640p", "480p", "360p", "240p", "144p"],
+            values=self.quality_values,
             variable=self.video_quality_var,
             width=200
         )
         self.quality_menu.grid(row=1, column=1, columnspan=2, padx=10, pady=10, sticky="w")
 
         # Video Codec
-        codec_label = ctk.CTkLabel(self.video_options_frame, text="Video Codec:", font=ctk.CTkFont(size=13))
+        codec_label = ctk.CTkLabel(self.video_options_frame, text=self.lang.get("video_codec"), font=ctk.CTkFont(size=13))
         codec_label.grid(row=2, column=0, padx=10, pady=10, sticky="w")
 
-        self.video_codec_var = ctk.StringVar(value="any")
+        self.video_codec_var = ctk.StringVar(value=self.lang.get("codec_any"))
+        codec_values = [
+            self.lang.get("codec_any"),
+            self.lang.get("codec_av1"),
+            self.lang.get("codec_vp9"),
+            self.lang.get("codec_vp8"),
+            self.lang.get("codec_avc")
+        ]
         self.codec_menu = ctk.CTkComboBox(
             self.video_options_frame,
-            values=["any", "AV1", "VP9", "VP8", "AVC (H.264)"],
+            values=codec_values,
             variable=self.video_codec_var,
             width=200
         )
         self.codec_menu.grid(row=2, column=1, columnspan=2, padx=10, pady=10, sticky="w")
 
+        # Audio Bitrate for Video
+        audio_br_label = ctk.CTkLabel(self.video_options_frame, text=self.lang.get("audio_bitrate"), font=ctk.CTkFont(size=13))
+        audio_br_label.grid(row=3, column=0, padx=10, pady=10, sticky="w")
+
+        self.video_audio_quality_var = ctk.StringVar(value=self.lang.get("bitrate_best"))
+        self.video_audio_values = []
+        self.update_audio_quality_display()
+
+        self.video_audio_menu = ctk.CTkComboBox(
+            self.video_options_frame,
+            values=self.video_audio_values,
+            variable=self.video_audio_quality_var,
+            width=200
+        )
+        self.video_audio_menu.grid(row=3, column=1, columnspan=2, padx=10, pady=10, sticky="w")
+
         # Video Container
-        container_label = ctk.CTkLabel(self.video_options_frame, text="Container:", font=ctk.CTkFont(size=13))
-        container_label.grid(row=3, column=0, padx=10, pady=10, sticky="w")
+        container_label = ctk.CTkLabel(self.video_options_frame, text=self.lang.get("container"), font=ctk.CTkFont(size=13))
+        container_label.grid(row=4, column=0, padx=10, pady=10, sticky="w")
 
         self.video_container_var = ctk.StringVar(value="mp4")
         self.container_menu = ctk.CTkComboBox(
             self.video_options_frame,
-            values=["mp4", "mkv", "webm", "avi"],
+            values=["mp4", "mkv", "webm", "avi", self.lang.get("custom_format")],
             variable=self.video_container_var,
+            command=self.on_container_change,
             width=200
         )
-        self.container_menu.grid(row=3, column=1, columnspan=2, padx=10, pady=(10, 15), sticky="w")
+        self.container_menu.grid(row=4, column=1, columnspan=2, padx=10, pady=10, sticky="w")
+
+        self.custom_container_entry = ctk.CTkEntry(
+            self.video_options_frame,
+            placeholder_text="e.g., mov, flv",
+            width=200
+        )
 
         # Audio Options Frame
         self.audio_options_frame = ctk.CTkFrame(self.main_frame)
 
         audio_title = ctk.CTkLabel(
             self.audio_options_frame,
-            text="Audio Options:",
+            text=self.lang.get("audio_options"),
             font=ctk.CTkFont(size=14, weight="bold")
         )
         audio_title.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 15), sticky="w")
 
         # Audio Quality (Bitrate)
-        audio_quality_label = ctk.CTkLabel(self.audio_options_frame, text="Audio Quality:", font=ctk.CTkFont(size=13))
+        audio_quality_label = ctk.CTkLabel(self.audio_options_frame, text=self.lang.get("audio_quality"), font=ctk.CTkFont(size=13))
         audio_quality_label.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        self.audio_quality_var = ctk.StringVar(value="192 kbps")
+        self.audio_quality_var = ctk.StringVar(value=self.lang.get("bitrate_192"))
+        self.audio_quality_values = []
+        self.update_audio_quality_display()
+
         self.audio_quality_menu = ctk.CTkComboBox(
             self.audio_options_frame,
-            values=["best", "320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps", "64 kbps"],
+            values=self.audio_quality_values,
             variable=self.audio_quality_var,
             width=200
         )
         self.audio_quality_menu.grid(row=1, column=1, columnspan=2, padx=10, pady=10, sticky="w")
 
         # Audio Format
-        audio_format_label = ctk.CTkLabel(self.audio_options_frame, text="Audio Format:", font=ctk.CTkFont(size=13))
+        audio_format_label = ctk.CTkLabel(self.audio_options_frame, text=self.lang.get("audio_format"), font=ctk.CTkFont(size=13))
         audio_format_label.grid(row=2, column=0, padx=10, pady=10, sticky="w")
 
         self.audio_format_var = ctk.StringVar(value="mp3")
         self.audio_format_menu = ctk.CTkComboBox(
             self.audio_options_frame,
-            values=["mp3", "aac", "opus", "m4a", "wav", "flac"],
+            values=["mp3", "aac", "opus", "m4a", "wav", "flac", self.lang.get("custom_format")],
             variable=self.audio_format_var,
+            command=self.on_audio_format_change,
             width=200
         )
-        self.audio_format_menu.grid(row=2, column=1, columnspan=2, padx=10, pady=(10, 15), sticky="w")
+        self.audio_format_menu.grid(row=2, column=1, columnspan=2, padx=10, pady=10, sticky="w")
+
+        self.custom_audio_entry = ctk.CTkEntry(
+            self.audio_options_frame,
+            placeholder_text="e.g., ogg, wma",
+            width=200
+        )
 
         # Download Path Frame
         path_frame = ctk.CTkFrame(self.main_frame)
         path_frame.pack(pady=10, padx=20, fill="x")
 
-        path_label = ctk.CTkLabel(path_frame, text="Download Location:", font=ctk.CTkFont(size=14, weight="bold"))
+        path_label = ctk.CTkLabel(path_frame, text=self.lang.get("download_location"), font=ctk.CTkFont(size=14, weight="bold"))
         path_label.pack(anchor="w", padx=10, pady=(10, 5))
 
         path_select_frame = ctk.CTkFrame(path_frame)
@@ -246,7 +409,7 @@ class YouTubeDownloaderGUI:
 
         browse_button = ctk.CTkButton(
             path_select_frame,
-            text="Browse",
+            text=self.lang.get("browse"),
             command=self.browse_folder,
             width=100
         )
@@ -258,7 +421,7 @@ class YouTubeDownloaderGUI:
 
         self.progress_label = ctk.CTkLabel(
             self.progress_frame,
-            text="Ready to download",
+            text=self.lang.get("ready"),
             font=ctk.CTkFont(size=12)
         )
         self.progress_label.pack(padx=10, pady=(10, 5))
@@ -270,7 +433,7 @@ class YouTubeDownloaderGUI:
         # Download Button (in main window, not scrollable)
         self.download_button = ctk.CTkButton(
             self.window,
-            text="Download",
+            text=self.lang.get("download"),
             command=self.start_download,
             height=45,
             font=ctk.CTkFont(size=16, weight="bold")
@@ -281,48 +444,127 @@ class YouTubeDownloaderGUI:
         log_frame = ctk.CTkFrame(self.main_frame)
         log_frame.pack(pady=10, padx=20, fill="both", expand=True)
 
-        log_label = ctk.CTkLabel(log_frame, text="Log:", font=ctk.CTkFont(size=14, weight="bold"))
+        log_label = ctk.CTkLabel(log_frame, text=self.lang.get("log"), font=ctk.CTkFont(size=14, weight="bold"))
         log_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.log_text = ctk.CTkTextbox(log_frame, height=200, font=ctk.CTkFont(size=11))
+        self.log_text = ctk.CTkTextbox(log_frame, height=150, font=ctk.CTkFont(size=11))
         self.log_text.pack(padx=10, pady=(0, 10), fill="both", expand=True)
 
         # Initialize options visibility
         self.toggle_options()
 
+    def change_language(self, choice):
+        """Change application language"""
+        lang_code = "ko" if choice == "한국어" else "en"
+        self.lang.load_language(lang_code)
+
+        # Refresh UI
+        messagebox.showinfo(
+            self.lang.get("success_title"),
+            "Language changed. Please restart the application for full effect." if lang_code == "en"
+            else "언어가 변경되었습니다. 완전한 적용을 위해 프로그램을 재시작하세요."
+        )
+
+    def toggle_cookie_options(self):
+        """Enable/disable cookie options"""
+        if self.use_cookies_var.get():
+            self.browser_menu.configure(state="normal")
+            self.profile_menu.configure(state="normal")
+        else:
+            self.browser_menu.configure(state="disabled")
+            self.profile_menu.configure(state="disabled")
+
+    def on_url_change(self, event=None):
+        """Detect URL change and trigger auto-analysis"""
+        current_url = self.url_entry.get().strip()
+
+        if current_url and current_url != self.last_url and current_url.startswith("http"):
+            self.last_url = current_url
+            # Delay analysis slightly to allow full URL to be pasted
+            self.window.after(500, lambda: self.auto_analyze_video(current_url))
+
+    def on_url_paste(self, event=None):
+        """Detect paste event"""
+        # Wait for paste to complete
+        self.window.after(100, self.on_url_change)
+
+    def auto_analyze_video(self, url):
+        """Automatically analyze video when URL is pasted"""
+        if not self.auto_analyzing and url == self.url_entry.get().strip():
+            self.analyze_video()
+
+    def on_container_change(self, choice):
+        """Handle custom container format"""
+        if choice == self.lang.get("custom_format"):
+            self.custom_container_entry.grid(row=5, column=1, columnspan=2, padx=10, pady=5, sticky="w")
+        else:
+            self.custom_container_entry.grid_forget()
+
+    def on_audio_format_change(self, choice):
+        """Handle custom audio format"""
+        if choice == self.lang.get("custom_format"):
+            self.custom_audio_entry.grid(row=3, column=1, columnspan=2, padx=10, pady=5, sticky="w")
+        else:
+            self.custom_audio_entry.grid_forget()
+
+    def update_quality_display(self):
+        """Update quality dropdown with translated values"""
+        self.quality_values = [
+            self.lang.get("quality_best"),
+            self.lang.get("quality_8k"),
+            self.lang.get("quality_4k"),
+            self.lang.get("quality_2k"),
+            self.lang.get("quality_1080p"),
+            self.lang.get("quality_720p"),
+            self.lang.get("quality_640p"),
+            self.lang.get("quality_480p"),
+            self.lang.get("quality_360p"),
+            self.lang.get("quality_240p"),
+            self.lang.get("quality_144p")
+        ]
+
+    def update_audio_quality_display(self):
+        """Update audio quality dropdown with translated values"""
+        self.audio_quality_values = [
+            self.lang.get("bitrate_best"),
+            self.lang.get("bitrate_320"),
+            self.lang.get("bitrate_256"),
+            self.lang.get("bitrate_192"),
+            self.lang.get("bitrate_128"),
+            self.lang.get("bitrate_96"),
+            self.lang.get("bitrate_64")
+        ]
+        self.video_audio_values = self.audio_quality_values.copy()
+
     def toggle_options(self):
         """Toggle between video and audio options"""
         if self.format_var.get() == "video":
-            self.video_options_frame.pack(pady=10, padx=20, fill="x", after=self.video_options_frame.master.children[list(self.video_options_frame.master.children.keys())[2]])
+            self.video_options_frame.pack(pady=10, padx=20, fill="x", after=self.video_options_frame.master.children[list(self.video_options_frame.master.children.keys())[3]])
             self.audio_options_frame.pack_forget()
         else:
             self.video_options_frame.pack_forget()
-            self.audio_options_frame.pack(pady=10, padx=20, fill="x", after=self.audio_options_frame.master.children[list(self.audio_options_frame.master.children.keys())[2]])
+            self.audio_options_frame.pack(pady=10, padx=20, fill="x", after=self.audio_options_frame.master.children[list(self.audio_options_frame.master.children.keys())[3]])
 
     def analyze_video(self):
         """Analyze video URL to get available formats"""
         url = self.url_entry.get().strip()
 
         if not url:
-            messagebox.showerror("Error", "Please enter a video URL")
             return
 
         if not url.startswith("http"):
-            messagebox.showerror("Error", "Please enter a valid URL")
             return
 
         # Check if yt-dlp is installed
         if not self.check_ytdlp():
             messagebox.showerror(
-                "Error",
-                "yt-dlp is not installed or not found in PATH.\n\n"
-                "Please install it using:\npip install yt-dlp"
+                self.lang.get("error_title"),
+                self.lang.get("error_ytdlp_not_found")
             )
             return
 
-        # Disable analyze button
-        self.analyze_button.configure(state="disabled")
-        self.analysis_status.configure(text="Analyzing video...")
+        self.auto_analyzing = True
+        self.analysis_status.configure(text=self.lang.get("analyzing"))
 
         # Start analysis in separate thread
         thread = threading.Thread(target=self._analyze_video_thread, args=(url,))
@@ -337,6 +579,11 @@ class YouTubeDownloaderGUI:
             # Get video information with JSON output
             cmd = ["yt-dlp", "-J", "--no-playlist", url]
 
+            # Add cookie options if enabled
+            if self.use_cookies_var.get():
+                browser = self.browser_var.get()
+                cmd.extend(["--cookies-from-browser", browser])
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -345,9 +592,8 @@ class YouTubeDownloaderGUI:
             )
 
             if result.returncode != 0:
-                self.analysis_status.configure(text="Analysis failed", text_color="red")
+                self.analysis_status.configure(text=self.lang.get("analysis_failed"), text_color="red")
                 self.log_message(f"Analysis error: {result.stderr}")
-                messagebox.showerror("Error", "Failed to analyze video. Check the URL and try again.")
                 return
 
             # Parse JSON output
@@ -377,74 +623,70 @@ class YouTubeDownloaderGUI:
 
             video_title = data.get("title", "Unknown")
             self.analysis_status.configure(
-                text=f"✓ Max Quality: {max_height}p | Max Audio: {int(max_audio_br)} kbps | Title: {video_title[:50]}...",
+                text=self.lang.get("analysis_complete", height=max_height, audio=int(max_audio_br), title=video_title[:50]),
                 text_color="green"
             )
             self.log_message(f"Analysis complete - Max video: {max_height}p, Max audio: {int(max_audio_br)} kbps")
 
         except subprocess.TimeoutExpired:
-            self.analysis_status.configure(text="Analysis timeout", text_color="red")
+            self.analysis_status.configure(text=self.lang.get("analysis_timeout"), text_color="red")
             self.log_message("Analysis timeout - URL may be invalid or network is slow")
-            messagebox.showerror("Error", "Analysis timeout. Please try again.")
         except json.JSONDecodeError:
-            self.analysis_status.configure(text="Analysis failed", text_color="red")
+            self.analysis_status.configure(text=self.lang.get("analysis_failed"), text_color="red")
             self.log_message("Failed to parse video information")
-            messagebox.showerror("Error", "Failed to parse video information.")
         except Exception as e:
-            self.analysis_status.configure(text="Analysis error", text_color="red")
+            self.analysis_status.configure(text=self.lang.get("analysis_error"), text_color="red")
             self.log_message(f"Analysis error: {str(e)}")
-            messagebox.showerror("Error", f"Analysis error: {str(e)}")
         finally:
-            self.analyze_button.configure(state="normal")
+            self.auto_analyzing = False
 
     def update_quality_options(self):
-        """Update quality options based on analysis results"""
+        """Update quality options based on analysis results - remove or disable unavailable"""
         if self.max_height is None:
             return
 
-        # Video quality options
-        quality_options = [
-            ("best", 999999),
-            ("8K (4320p)", 4320),
-            ("4K (2160p)", 2160),
-            ("2K (1440p)", 1440),
-            ("1080p", 1080),
-            ("720p", 720),
-            ("640p", 640),
-            ("480p", 480),
-            ("360p", 360),
-            ("240p", 240),
-            ("144p", 144)
+        # Quality mapping
+        quality_map = [
+            (self.lang.get("quality_best"), 999999, "best"),
+            (self.lang.get("quality_8k"), 4320, "8K"),
+            (self.lang.get("quality_4k"), 2160, "4K"),
+            (self.lang.get("quality_2k"), 1440, "2K"),
+            (self.lang.get("quality_1080p"), 1080, "1080p"),
+            (self.lang.get("quality_720p"), 720, "720p"),
+            (self.lang.get("quality_640p"), 640, "640p"),
+            (self.lang.get("quality_480p"), 480, "480p"),
+            (self.lang.get("quality_360p"), 360, "360p"),
+            (self.lang.get("quality_240p"), 240, "240p"),
+            (self.lang.get("quality_144p"), 144, "144p")
         ]
 
+        # Only include available qualities
         updated_options = []
-        for label, height in quality_options:
-            if label == "best" or height <= self.max_height:
+        for label, height, key in quality_map:
+            if key == "best" or height <= self.max_height:
                 updated_options.append(label)
-            else:
-                updated_options.append(f"{label} (사용 불가)")
 
         self.quality_menu.configure(values=updated_options)
 
-        # Audio quality options
-        audio_options = [
-            ("best", 999999),
-            ("320 kbps", 320),
-            ("256 kbps", 256),
-            ("192 kbps", 192),
-            ("128 kbps", 128),
-            ("96 kbps", 96),
-            ("64 kbps", 64)
+        # Audio quality mapping
+        audio_map = [
+            (self.lang.get("bitrate_best"), 999999, "best"),
+            (self.lang.get("bitrate_320"), 320, "320"),
+            (self.lang.get("bitrate_256"), 256, "256"),
+            (self.lang.get("bitrate_192"), 192, "192"),
+            (self.lang.get("bitrate_128"), 128, "128"),
+            (self.lang.get("bitrate_96"), 96, "96"),
+            (self.lang.get("bitrate_64"), 64, "64")
         ]
 
+        # Only include available audio qualities
         updated_audio = []
-        for label, bitrate in audio_options:
-            if label == "best" or bitrate <= self.max_audio_bitrate:
+        for label, bitrate, key in audio_map:
+            if key == "best" or bitrate <= self.max_audio_bitrate:
                 updated_audio.append(label)
-            else:
-                updated_audio.append(f"{label} (사용 불가)")
 
         self.audio_quality_menu.configure(values=updated_audio)
+        self.video_audio_menu.configure(values=updated_audio)
 
     def browse_folder(self):
         folder = filedialog.askdirectory()
@@ -475,32 +717,19 @@ class YouTubeDownloaderGUI:
         url = self.url_entry.get().strip()
 
         if not url:
-            messagebox.showerror("Error", "Please enter a video URL")
+            messagebox.showerror(self.lang.get("error_title"), self.lang.get("error_no_url"))
             return
 
         if not url.startswith("http"):
-            messagebox.showerror("Error", "Please enter a valid URL")
+            messagebox.showerror(self.lang.get("error_title"), self.lang.get("error_invalid_url"))
             return
 
         # Check if yt-dlp is installed
         if not self.check_ytdlp():
             messagebox.showerror(
-                "Error",
-                "yt-dlp is not installed or not found in PATH.\n\n"
-                "Please install it using:\npip install yt-dlp"
+                self.lang.get("error_title"),
+                self.lang.get("error_ytdlp_not_found")
             )
-            return
-
-        # Check for unavailable options
-        selected_quality = self.video_quality_var.get()
-        selected_audio = self.audio_quality_var.get()
-
-        if "(사용 불가)" in selected_quality:
-            messagebox.showerror("Error", "Selected video quality is not available. Please choose a different quality or click 'Analyze' first.")
-            return
-
-        if "(사용 불가)" in selected_audio:
-            messagebox.showerror("Error", "Selected audio quality is not available. Please choose a different quality or click 'Analyze' first.")
             return
 
         # Disable download button
@@ -511,66 +740,90 @@ class YouTubeDownloaderGUI:
         thread.daemon = True
         thread.start()
 
+    def get_height_from_quality(self, quality_text):
+        """Extract height from quality text"""
+        if self.lang.get("quality_best") in quality_text or "best" in quality_text:
+            return None
+        if "8K" in quality_text or "4320" in quality_text:
+            return "4320"
+        elif "4K" in quality_text or "2160" in quality_text:
+            return "2160"
+        elif "2K" in quality_text or "1440" in quality_text:
+            return "1440"
+        elif "1080" in quality_text:
+            return "1080"
+        elif "720" in quality_text:
+            return "720"
+        elif "640" in quality_text:
+            return "640"
+        elif "480" in quality_text:
+            return "480"
+        elif "360" in quality_text:
+            return "360"
+        elif "240" in quality_text:
+            return "240"
+        elif "144" in quality_text:
+            return "144"
+        return None
+
+    def get_codec_filter(self, codec_text):
+        """Get codec filter string"""
+        if self.lang.get("codec_av1") in codec_text or "AV1" in codec_text:
+            return "[vcodec^=av01]"
+        elif self.lang.get("codec_vp9") in codec_text or "VP9" in codec_text:
+            return "[vcodec^=vp9]"
+        elif self.lang.get("codec_vp8") in codec_text or "VP8" in codec_text:
+            return "[vcodec^=vp8]"
+        elif self.lang.get("codec_avc") in codec_text or "AVC" in codec_text or "H.264" in codec_text:
+            return "[vcodec^=avc]"
+        return ""
+
+    def get_bitrate_from_text(self, bitrate_text):
+        """Extract bitrate number from text"""
+        if self.lang.get("bitrate_best") in bitrate_text or "best" in bitrate_text:
+            return None
+        # Extract number
+        match = re.search(r'(\d+)', bitrate_text)
+        if match:
+            return match.group(1)
+        return None
+
     def build_format_string(self):
         """Build yt-dlp format string based on user selections"""
         if self.format_var.get() == "audio":
             return None  # Audio format is handled separately
 
         # Video format
-        format_parts = []
+        video_selector = "bestvideo"
 
         # Get quality
         quality = self.video_quality_var.get()
-        if "8K" in quality or "4320p" in quality:
-            height = "4320"
-        elif "4K" in quality or "2160p" in quality:
-            height = "2160"
-        elif "2K" in quality or "1440p" in quality:
-            height = "1440"
-        elif "1080p" in quality:
-            height = "1080"
-        elif "720p" in quality:
-            height = "720"
-        elif "640p" in quality:
-            height = "640"
-        elif "480p" in quality:
-            height = "480"
-        elif "360p" in quality:
-            height = "360"
-        elif "240p" in quality:
-            height = "240"
-        elif "144p" in quality:
-            height = "144"
-        else:
-            height = None
-
-        # Build video format selector
-        video_selector = "bestvideo"
+        height = self.get_height_from_quality(quality)
 
         if height:
             video_selector += f"[height<={height}]"
 
         # Get codec
         codec = self.video_codec_var.get()
-        if codec != "any":
-            if codec == "AV1":
-                video_selector += "[vcodec^=av01]"
-            elif codec == "VP9":
-                video_selector += "[vcodec^=vp9]"
-            elif codec == "VP8":
-                video_selector += "[vcodec^=vp8]"
-            elif codec == "AVC (H.264)":
-                video_selector += "[vcodec^=avc]"
+        codec_filter = self.get_codec_filter(codec)
+        if codec_filter:
+            video_selector += codec_filter
 
-        # Combine video and audio
-        format_string = f"{video_selector}+bestaudio/best"
+        # Get audio bitrate
+        audio_quality = self.video_audio_quality_var.get()
+        audio_br = self.get_bitrate_from_text(audio_quality)
+
+        if audio_br:
+            format_string = f"{video_selector}+bestaudio[abr<={audio_br}]/best"
+        else:
+            format_string = f"{video_selector}+bestaudio/best"
 
         return format_string
 
     def download_video(self, url):
         try:
             self.log_message(f"Starting download: {url}")
-            self.progress_label.configure(text="Downloading...")
+            self.progress_label.configure(text=self.lang.get("downloading"))
             self.progress_bar.set(0)
 
             # Build yt-dlp command
@@ -578,17 +831,25 @@ class YouTubeDownloaderGUI:
 
             cmd = ["yt-dlp", url, "-o", output_template]
 
+            # Add cookie options if enabled
+            if self.use_cookies_var.get():
+                browser = self.browser_var.get()
+                cmd.extend(["--cookies-from-browser", browser])
+                self.log_message(f"Using cookies from: {browser}")
+
             # Add format options
             if self.format_var.get() == "audio":
                 # Audio download
                 audio_format = self.audio_format_var.get()
+                if audio_format == self.lang.get("custom_format"):
+                    audio_format = self.custom_audio_entry.get().strip() or "mp3"
+
                 audio_quality = self.audio_quality_var.get()
 
                 cmd.extend(["-x", "--audio-format", audio_format])
 
-                if audio_quality != "best":
-                    # Extract bitrate number
-                    bitrate = audio_quality.split()[0]
+                bitrate = self.get_bitrate_from_text(audio_quality)
+                if bitrate:
                     cmd.extend(["--audio-quality", bitrate + "K"])
 
                 self.log_message(f"Format: Audio only")
@@ -602,12 +863,16 @@ class YouTubeDownloaderGUI:
 
                 # Set container format
                 container = self.video_container_var.get()
+                if container == self.lang.get("custom_format"):
+                    container = self.custom_container_entry.get().strip() or "mp4"
+
                 cmd.extend(["--merge-output-format", container])
 
                 # Log settings
                 self.log_message(f"Format: Video")
                 self.log_message(f"Quality: {self.video_quality_var.get()}")
                 self.log_message(f"Video Codec: {self.video_codec_var.get()}")
+                self.log_message(f"Audio Bitrate: {self.video_audio_quality_var.get()}")
                 self.log_message(f"Container: {container.upper()}")
 
             # Add progress and other options
@@ -644,18 +909,18 @@ class YouTubeDownloaderGUI:
 
             if process.returncode == 0:
                 self.progress_bar.set(1.0)
-                self.progress_label.configure(text="Download completed!")
+                self.progress_label.configure(text=self.lang.get("download_completed"))
                 self.log_message("Download completed successfully!")
-                messagebox.showinfo("Success", "Download completed successfully!")
+                messagebox.showinfo(self.lang.get("success_title"), self.lang.get("success_message"))
             else:
-                self.progress_label.configure(text="Download failed")
+                self.progress_label.configure(text=self.lang.get("download_failed"))
                 self.log_message("Download failed!")
-                messagebox.showerror("Error", "Download failed. Check the log for details.")
+                messagebox.showerror(self.lang.get("error_title"), "Download failed. Check the log for details.")
 
         except Exception as e:
             self.log_message(f"Error: {str(e)}")
-            self.progress_label.configure(text="Error occurred")
-            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+            self.progress_label.configure(text=self.lang.get("error_occurred"))
+            messagebox.showerror(self.lang.get("error_title"), f"An error occurred:\n{str(e)}")
 
         finally:
             # Re-enable download button

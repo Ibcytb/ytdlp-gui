@@ -247,13 +247,23 @@ class YouTubeDownloaderGUI:
         url_label = ctk.CTkLabel(url_frame, text=self.lang.get("video_url"), font=ctk.CTkFont(size=14, weight="bold"))
         url_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.url_entry = ctk.CTkEntry(
+        # Use textbox for multiple URLs
+        self.url_entry = ctk.CTkTextbox(
             url_frame,
-            placeholder_text="https://www.youtube.com/watch?v=...",
-            height=40,
+            height=80,
             font=ctk.CTkFont(size=12)
         )
-        self.url_entry.pack(padx=10, pady=(0, 10), fill="x")
+        self.url_entry.pack(padx=10, pady=(0, 5), fill="x")
+        self.url_entry.insert("1.0", "https://www.youtube.com/watch?v=...")
+
+        # Info label for multiple URLs
+        url_info_label = ctk.CTkLabel(
+            url_frame,
+            text=self.lang.get("multi_url_info") if hasattr(self, 'lang') else "Enter one URL per line for batch download",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        url_info_label.pack(anchor="w", padx=10, pady=(0, 5))
 
         # Bind URL entry to detect paste
         self.url_entry.bind('<KeyRelease>', self.on_url_change)
@@ -547,6 +557,36 @@ class YouTubeDownloaderGUI:
         )
         browse_button.pack(side="right")
 
+        # Settings Frame
+        settings_frame = ctk.CTkFrame(self.main_frame)
+        settings_frame.pack(pady=10, padx=20, fill="x")
+
+        settings_title = ctk.CTkLabel(settings_frame, text=self.lang.get("settings"), font=ctk.CTkFont(size=14, weight="bold"))
+        settings_title.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
+
+        # Language selection
+        lang_label = ctk.CTkLabel(settings_frame, text=self.lang.get("language"), font=ctk.CTkFont(size=12))
+        lang_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+        self.language_var = ctk.StringVar(value="한국어")
+        language_menu = ctk.CTkComboBox(
+            settings_frame,
+            values=["English", "한국어"],
+            variable=self.language_var,
+            command=self.change_language,
+            width=150
+        )
+        language_menu.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
+        # Manual translation editor button
+        edit_translation_button = ctk.CTkButton(
+            settings_frame,
+            text=self.lang.get("edit_translations") if hasattr(self, 'lang') else "Edit Translations",
+            command=self.open_translation_editor,
+            width=150
+        )
+        edit_translation_button.grid(row=2, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="w")
+
         # Progress Frame (in main window, not scrollable)
         self.progress_frame = ctk.CTkFrame(self.window)
         self.progress_frame.pack(pady=10, padx=20, fill="x", side="bottom")
@@ -582,8 +622,25 @@ class YouTubeDownloaderGUI:
         self.log_text = ctk.CTkTextbox(log_frame, height=150, font=ctk.CTkFont(size=11))
         self.log_text.pack(padx=10, pady=(0, 10), fill="both", expand=True)
 
+        # Bind mousewheel for faster scrolling
+        self.bind_mousewheel(self.log_text)
+        self.bind_mousewheel(self.url_entry)
+
         # Initialize options visibility
         self.toggle_options()
+
+    def bind_mousewheel(self, widget):
+        """Bind mousewheel for faster scrolling"""
+        def on_mousewheel(event):
+            # Scroll 5 lines at a time (default is 1)
+            widget._parent_canvas.yview_scroll(int(-5 * (event.delta / 120)), "units")
+            return "break"
+
+        # Bind for Windows and Linux
+        widget.bind("<MouseWheel>", on_mousewheel)
+        # Bind for Linux (alternative)
+        widget.bind("<Button-4>", lambda e: widget._parent_canvas.yview_scroll(-5, "units"))
+        widget.bind("<Button-5>", lambda e: widget._parent_canvas.yview_scroll(5, "units"))
 
     def change_language(self, choice):
         """Change application language"""
@@ -629,9 +686,16 @@ class YouTubeDownloaderGUI:
 
     def on_url_change(self, event=None):
         """Detect URL change and trigger auto-analysis"""
-        current_url = self.url_entry.get().strip()
+        current_text = self.url_entry.get("1.0", "end").strip()
+        # Get first valid URL
+        current_url = ""
+        for line in current_text.split('\n'):
+            line = line.strip()
+            if line and line.startswith("http") and "youtube.com/watch?v=..." not in line:
+                current_url = line
+                break
 
-        if current_url and current_url != self.last_url and current_url.startswith("http"):
+        if current_url and current_url != self.last_url:
             self.last_url = current_url
             # Delay analysis slightly to allow full URL to be pasted
             self.window.after(500, lambda: self.auto_analyze_video(current_url))
@@ -643,8 +707,11 @@ class YouTubeDownloaderGUI:
 
     def auto_analyze_video(self, url):
         """Automatically analyze video when URL is pasted"""
-        if not self.auto_analyzing and url == self.url_entry.get().strip():
-            self.analyze_video()
+        if not self.auto_analyzing:
+            # Check if URL still exists in textbox
+            current_text = self.url_entry.get("1.0", "end").strip()
+            if url in current_text:
+                self.analyze_video()
 
     def on_container_change(self, choice):
         """Handle custom container format"""
@@ -703,12 +770,16 @@ class YouTubeDownloaderGUI:
 
     def analyze_video(self):
         """Analyze video URL to get available formats"""
-        url = self.url_entry.get().strip()
+        # Get first valid URL from textbox
+        current_text = self.url_entry.get("1.0", "end").strip()
+        url = ""
+        for line in current_text.split('\n'):
+            line = line.strip()
+            if line and line.startswith("http") and "youtube.com/watch?v=..." not in line:
+                url = line
+                break
 
         if not url:
-            return
-
-        if not url.startswith("http"):
             return
 
         # Check if yt-dlp is installed
@@ -854,6 +925,75 @@ class YouTubeDownloaderGUI:
             self.path_entry.delete(0, "end")
             self.path_entry.insert(0, folder)
 
+    def open_translation_editor(self):
+        """Open translation editor window"""
+        editor_window = ctk.CTkToplevel(self.window)
+        editor_window.title(self.lang.get("translation_editor"))
+        editor_window.geometry("700x500")
+
+        # Get current language file
+        lang_file = Path(__file__).parent / f"lang_{self.lang.lang_code}.json"
+
+        # Load current translations
+        with open(lang_file, 'r', encoding='utf-8') as f:
+            translations = json.load(f)
+
+        # Create scrollable frame
+        scroll_frame = ctk.CTkScrollableFrame(editor_window)
+        scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
+
+        # Create entry fields for each translation
+        entries = {}
+        row = 0
+        for key, value in sorted(translations.items()):
+            # Key label
+            key_label = ctk.CTkLabel(scroll_frame, text=key, font=ctk.CTkFont(size=11, weight="bold"))
+            key_label.grid(row=row, column=0, padx=5, pady=5, sticky="w")
+
+            # Value entry
+            entry = ctk.CTkEntry(scroll_frame, width=400)
+            entry.insert(0, value)
+            entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
+            entries[key] = entry
+
+            row += 1
+
+        scroll_frame.grid_columnconfigure(1, weight=1)
+
+        # Button frame
+        button_frame = ctk.CTkFrame(editor_window)
+        button_frame.pack(pady=10, padx=10, fill="x")
+
+        def save_translations():
+            """Save edited translations"""
+            new_translations = {}
+            for key, entry in entries.items():
+                new_translations[key] = entry.get()
+
+            # Save to file
+            with open(lang_file, 'w', encoding='utf-8') as f:
+                json.dump(new_translations, f, ensure_ascii=False, indent=2)
+
+            # Reload translations
+            self.lang.load_language(self.lang.lang_code)
+
+            messagebox.showinfo(self.lang.get("success_title"), "Translations saved successfully!")
+            editor_window.destroy()
+
+        save_button = ctk.CTkButton(
+            button_frame,
+            text=self.lang.get("save"),
+            command=save_translations
+        )
+        save_button.pack(side="left", padx=5)
+
+        cancel_button = ctk.CTkButton(
+            button_frame,
+            text=self.lang.get("cancel"),
+            command=editor_window.destroy
+        )
+        cancel_button.pack(side="left", padx=5)
+
     def log_message(self, message):
         self.log_text.insert("end", message + "\n")
         self.log_text.see("end")
@@ -873,14 +1013,20 @@ class YouTubeDownloaderGUI:
             return False
 
     def start_download(self):
-        url = self.url_entry.get().strip()
+        # Get URLs from textbox
+        urls_text = self.url_entry.get("1.0", "end").strip()
 
-        if not url:
+        if not urls_text:
             messagebox.showerror(self.lang.get("error_title"), self.lang.get("error_no_url"))
             return
 
-        if not url.startswith("http"):
-            messagebox.showerror(self.lang.get("error_title"), self.lang.get("error_invalid_url"))
+        # Split by newlines and filter out empty lines and placeholder
+        urls = [line.strip() for line in urls_text.split('\n')
+                if line.strip() and line.strip().startswith("http")
+                and "youtube.com/watch?v=..." not in line]
+
+        if not urls:
+            messagebox.showerror(self.lang.get("error_title"), self.lang.get("error_no_url"))
             return
 
         # Check if yt-dlp is installed
@@ -895,9 +1041,21 @@ class YouTubeDownloaderGUI:
         self.download_button.configure(state="disabled")
 
         # Start download in separate thread
-        thread = threading.Thread(target=self.download_video, args=(url,))
+        thread = threading.Thread(target=self.download_multiple_videos, args=(urls,))
         thread.daemon = True
         thread.start()
+
+    def download_multiple_videos(self, urls):
+        """Download multiple videos sequentially"""
+        total = len(urls)
+        for i, url in enumerate(urls, 1):
+            self.log_message(f"\n{'='*50}")
+            self.log_message(f"Downloading {i}/{total}: {url}")
+            self.log_message(f"{'='*50}\n")
+            self.download_video(url)
+
+        # Re-enable download button after all downloads
+        self.download_button.configure(state="normal")
 
     def get_height_from_quality(self, quality_text):
         """Extract height from quality text"""
@@ -1034,6 +1192,8 @@ class YouTubeDownloaderGUI:
                     container = self.custom_container_entry.get().strip() or "mp4"
 
                 cmd.extend(["--merge-output-format", container])
+                # Add remux to ensure format conversion if needed
+                cmd.extend(["--remux-video", container])
 
                 # Log settings
                 self.log_message(f"Format: Video")
@@ -1098,10 +1258,6 @@ class YouTubeDownloaderGUI:
             self.log_message(f"Error: {str(e)}")
             self.progress_label.configure(text=self.lang.get("error_occurred"))
             messagebox.showerror(self.lang.get("error_title"), f"An error occurred:\n{str(e)}")
-
-        finally:
-            # Re-enable download button
-            self.download_button.configure(state="normal")
 
     def run(self):
         self.window.mainloop()

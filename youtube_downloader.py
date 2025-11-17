@@ -15,8 +15,8 @@ ctk.set_default_color_theme("blue")
 class YouTubeDownloaderGUI:
     def __init__(self):
         self.window = ctk.CTk()
-        self.window.title("YouTube Downloader (yt-dlp)")
-        self.window.geometry("800x700")
+        self.window.title("YouTube Downloader Pro (yt-dlp)")
+        self.window.geometry("900x900")
 
         # Default download path
         self.download_path = str(Path.home() / "Downloads")
@@ -36,19 +36,23 @@ class YouTubeDownloaderGUI:
         self.window.geometry(f'{width}x{height}+{x}+{y}')
 
     def create_widgets(self):
+        # Create scrollable frame
+        self.main_frame = ctk.CTkScrollableFrame(self.window)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
         # Title
         title_label = ctk.CTkLabel(
-            self.window,
-            text="YouTube Downloader",
-            font=ctk.CTkFont(size=24, weight="bold")
+            self.main_frame,
+            text="YouTube Downloader Pro",
+            font=ctk.CTkFont(size=28, weight="bold")
         )
         title_label.pack(pady=20)
 
         # URL Frame
-        url_frame = ctk.CTkFrame(self.window)
+        url_frame = ctk.CTkFrame(self.main_frame)
         url_frame.pack(pady=10, padx=20, fill="x")
 
-        url_label = ctk.CTkLabel(url_frame, text="Video URL:", font=ctk.CTkFont(size=14))
+        url_label = ctk.CTkLabel(url_frame, text="Video URL:", font=ctk.CTkFont(size=14, weight="bold"))
         url_label.pack(anchor="w", padx=10, pady=(10, 5))
 
         self.url_entry = ctk.CTkEntry(
@@ -59,49 +63,128 @@ class YouTubeDownloaderGUI:
         )
         self.url_entry.pack(padx=10, pady=(0, 10), fill="x")
 
-        # Options Frame
-        options_frame = ctk.CTkFrame(self.window)
-        options_frame.pack(pady=10, padx=20, fill="x")
+        # Format Selection Frame
+        format_frame = ctk.CTkFrame(self.main_frame)
+        format_frame.pack(pady=10, padx=20, fill="x")
 
-        # Format Selection
-        format_label = ctk.CTkLabel(options_frame, text="Format:", font=ctk.CTkFont(size=14))
-        format_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        format_title = ctk.CTkLabel(format_frame, text="Download Type:", font=ctk.CTkFont(size=14, weight="bold"))
+        format_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        format_select_frame = ctk.CTkFrame(format_frame)
+        format_select_frame.pack(padx=10, pady=(0, 10), fill="x")
 
         self.format_var = ctk.StringVar(value="video")
         format_radio1 = ctk.CTkRadioButton(
-            options_frame,
+            format_select_frame,
             text="Video",
             variable=self.format_var,
-            value="video"
+            value="video",
+            command=self.toggle_options,
+            font=ctk.CTkFont(size=13)
         )
-        format_radio1.grid(row=0, column=1, padx=5, pady=10)
+        format_radio1.pack(side="left", padx=20, pady=10)
 
         format_radio2 = ctk.CTkRadioButton(
-            options_frame,
+            format_select_frame,
             text="Audio Only",
             variable=self.format_var,
-            value="audio"
+            value="audio",
+            command=self.toggle_options,
+            font=ctk.CTkFont(size=13)
         )
-        format_radio2.grid(row=0, column=2, padx=5, pady=10)
+        format_radio2.pack(side="left", padx=20, pady=10)
 
-        # Quality Selection
-        quality_label = ctk.CTkLabel(options_frame, text="Quality:", font=ctk.CTkFont(size=14))
+        # Video Options Frame
+        self.video_options_frame = ctk.CTkFrame(self.main_frame)
+        self.video_options_frame.pack(pady=10, padx=20, fill="x")
+
+        video_title = ctk.CTkLabel(
+            self.video_options_frame,
+            text="Video Options:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        video_title.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 15), sticky="w")
+
+        # Video Quality
+        quality_label = ctk.CTkLabel(self.video_options_frame, text="Quality:", font=ctk.CTkFont(size=13))
         quality_label.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        self.quality_var = ctk.StringVar(value="best")
+        self.video_quality_var = ctk.StringVar(value="best")
         quality_menu = ctk.CTkComboBox(
-            options_frame,
-            values=["best", "1080p", "720p", "480p", "360p"],
-            variable=self.quality_var,
-            width=150
+            self.video_options_frame,
+            values=["best", "8K (4320p)", "4K (2160p)", "2K (1440p)", "1080p", "720p", "640p", "480p", "360p", "240p", "144p"],
+            variable=self.video_quality_var,
+            width=180
         )
-        quality_menu.grid(row=1, column=1, columnspan=2, padx=5, pady=10, sticky="w")
+        quality_menu.grid(row=1, column=1, columnspan=2, padx=10, pady=10, sticky="w")
+
+        # Video Codec
+        codec_label = ctk.CTkLabel(self.video_options_frame, text="Video Codec:", font=ctk.CTkFont(size=13))
+        codec_label.grid(row=2, column=0, padx=10, pady=10, sticky="w")
+
+        self.video_codec_var = ctk.StringVar(value="any")
+        codec_menu = ctk.CTkComboBox(
+            self.video_options_frame,
+            values=["any", "AV1", "VP9", "VP8", "AVC (H.264)"],
+            variable=self.video_codec_var,
+            width=180
+        )
+        codec_menu.grid(row=2, column=1, columnspan=2, padx=10, pady=10, sticky="w")
+
+        # Video Container
+        container_label = ctk.CTkLabel(self.video_options_frame, text="Container:", font=ctk.CTkFont(size=13))
+        container_label.grid(row=3, column=0, padx=10, pady=10, sticky="w")
+
+        self.video_container_var = ctk.StringVar(value="mp4")
+        container_menu = ctk.CTkComboBox(
+            self.video_options_frame,
+            values=["mp4", "mkv", "webm", "avi"],
+            variable=self.video_container_var,
+            width=180
+        )
+        container_menu.grid(row=3, column=1, columnspan=2, padx=10, pady=(10, 15), sticky="w")
+
+        # Audio Options Frame
+        self.audio_options_frame = ctk.CTkFrame(self.main_frame)
+
+        audio_title = ctk.CTkLabel(
+            self.audio_options_frame,
+            text="Audio Options:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        audio_title.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 15), sticky="w")
+
+        # Audio Quality (Bitrate)
+        audio_quality_label = ctk.CTkLabel(self.audio_options_frame, text="Audio Quality:", font=ctk.CTkFont(size=13))
+        audio_quality_label.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+
+        self.audio_quality_var = ctk.StringVar(value="192")
+        audio_quality_menu = ctk.CTkComboBox(
+            self.audio_options_frame,
+            values=["best", "320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps", "64 kbps"],
+            variable=self.audio_quality_var,
+            width=180
+        )
+        audio_quality_menu.grid(row=1, column=1, columnspan=2, padx=10, pady=10, sticky="w")
+
+        # Audio Format
+        audio_format_label = ctk.CTkLabel(self.audio_options_frame, text="Audio Format:", font=ctk.CTkFont(size=13))
+        audio_format_label.grid(row=2, column=0, padx=10, pady=10, sticky="w")
+
+        self.audio_format_var = ctk.StringVar(value="mp3")
+        audio_format_menu = ctk.CTkComboBox(
+            self.audio_options_frame,
+            values=["mp3", "aac", "opus", "m4a", "wav", "flac"],
+            variable=self.audio_format_var,
+            width=180
+        )
+        audio_format_menu.grid(row=2, column=1, columnspan=2, padx=10, pady=(10, 15), sticky="w")
 
         # Download Path Frame
-        path_frame = ctk.CTkFrame(self.window)
+        path_frame = ctk.CTkFrame(self.main_frame)
         path_frame.pack(pady=10, padx=20, fill="x")
 
-        path_label = ctk.CTkLabel(path_frame, text="Download Location:", font=ctk.CTkFont(size=14))
+        path_label = ctk.CTkLabel(path_frame, text="Download Location:", font=ctk.CTkFont(size=14, weight="bold"))
         path_label.pack(anchor="w", padx=10, pady=(10, 5))
 
         path_select_frame = ctk.CTkFrame(path_frame)
@@ -123,22 +206,22 @@ class YouTubeDownloaderGUI:
         )
         browse_button.pack(side="right")
 
-        # Progress Frame
-        progress_frame = ctk.CTkFrame(self.window)
-        progress_frame.pack(pady=10, padx=20, fill="x")
+        # Progress Frame (in main window, not scrollable)
+        self.progress_frame = ctk.CTkFrame(self.window)
+        self.progress_frame.pack(pady=10, padx=20, fill="x", side="bottom")
 
         self.progress_label = ctk.CTkLabel(
-            progress_frame,
+            self.progress_frame,
             text="Ready to download",
             font=ctk.CTkFont(size=12)
         )
         self.progress_label.pack(padx=10, pady=(10, 5))
 
-        self.progress_bar = ctk.CTkProgressBar(progress_frame)
+        self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
         self.progress_bar.pack(padx=10, pady=(0, 10), fill="x")
         self.progress_bar.set(0)
 
-        # Download Button
+        # Download Button (in main window, not scrollable)
         self.download_button = ctk.CTkButton(
             self.window,
             text="Download",
@@ -146,17 +229,29 @@ class YouTubeDownloaderGUI:
             height=45,
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.download_button.pack(pady=10, padx=20, fill="x")
+        self.download_button.pack(pady=10, padx=20, fill="x", side="bottom")
 
-        # Log Frame
-        log_frame = ctk.CTkFrame(self.window)
+        # Log Frame (back in scrollable frame)
+        log_frame = ctk.CTkFrame(self.main_frame)
         log_frame.pack(pady=10, padx=20, fill="both", expand=True)
 
-        log_label = ctk.CTkLabel(log_frame, text="Log:", font=ctk.CTkFont(size=14))
+        log_label = ctk.CTkLabel(log_frame, text="Log:", font=ctk.CTkFont(size=14, weight="bold"))
         log_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.log_text = ctk.CTkTextbox(log_frame, height=150, font=ctk.CTkFont(size=11))
+        self.log_text = ctk.CTkTextbox(log_frame, height=200, font=ctk.CTkFont(size=11))
         self.log_text.pack(padx=10, pady=(0, 10), fill="both", expand=True)
+
+        # Initialize options visibility
+        self.toggle_options()
+
+    def toggle_options(self):
+        """Toggle between video and audio options"""
+        if self.format_var.get() == "video":
+            self.video_options_frame.pack(pady=10, padx=20, fill="x", after=self.video_options_frame.master.children[list(self.video_options_frame.master.children.keys())[2]])
+            self.audio_options_frame.pack_forget()
+        else:
+            self.video_options_frame.pack_forget()
+            self.audio_options_frame.pack(pady=10, padx=20, fill="x", after=self.audio_options_frame.master.children[list(self.audio_options_frame.master.children.keys())[2]])
 
     def browse_folder(self):
         folder = filedialog.askdirectory()
@@ -211,6 +306,62 @@ class YouTubeDownloaderGUI:
         thread.daemon = True
         thread.start()
 
+    def build_format_string(self):
+        """Build yt-dlp format string based on user selections"""
+        if self.format_var.get() == "audio":
+            return None  # Audio format is handled separately
+
+        # Video format
+        format_parts = []
+
+        # Get quality
+        quality = self.video_quality_var.get()
+        if "8K" in quality or "4320p" in quality:
+            height = "4320"
+        elif "4K" in quality or "2160p" in quality:
+            height = "2160"
+        elif "2K" in quality or "1440p" in quality:
+            height = "1440"
+        elif "1080p" in quality:
+            height = "1080"
+        elif "720p" in quality:
+            height = "720"
+        elif "640p" in quality:
+            height = "640"
+        elif "480p" in quality:
+            height = "480"
+        elif "360p" in quality:
+            height = "360"
+        elif "240p" in quality:
+            height = "240"
+        elif "144p" in quality:
+            height = "144"
+        else:
+            height = None
+
+        # Build video format selector
+        video_selector = "bestvideo"
+
+        if height:
+            video_selector += f"[height<={height}]"
+
+        # Get codec
+        codec = self.video_codec_var.get()
+        if codec != "any":
+            if codec == "AV1":
+                video_selector += "[vcodec^=av01]"
+            elif codec == "VP9":
+                video_selector += "[vcodec^=vp9]"
+            elif codec == "VP8":
+                video_selector += "[vcodec^=vp8]"
+            elif codec == "AVC (H.264)":
+                video_selector += "[vcodec^=avc]"
+
+        # Combine video and audio
+        format_string = f"{video_selector}+bestaudio/best"
+
+        return format_string
+
     def download_video(self, url):
         try:
             self.log_message(f"Starting download: {url}")
@@ -224,22 +375,42 @@ class YouTubeDownloaderGUI:
 
             # Add format options
             if self.format_var.get() == "audio":
-                cmd.extend(["-x", "--audio-format", "mp3"])
-                self.log_message("Format: Audio only (MP3)")
-            else:
-                quality = self.quality_var.get()
-                if quality == "best":
-                    cmd.extend(["-f", "bestvideo+bestaudio/best"])
-                else:
-                    height = quality.rstrip('p')
-                    cmd.extend(["-f", f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"])
-                self.log_message(f"Format: Video - Quality: {quality}")
+                # Audio download
+                audio_format = self.audio_format_var.get()
+                audio_quality = self.audio_quality_var.get()
 
-            # Add progress hook
+                cmd.extend(["-x", "--audio-format", audio_format])
+
+                if audio_quality != "best":
+                    # Extract bitrate number
+                    bitrate = audio_quality.split()[0]
+                    cmd.extend(["--audio-quality", bitrate + "K"])
+
+                self.log_message(f"Format: Audio only")
+                self.log_message(f"Audio Format: {audio_format.upper()}")
+                self.log_message(f"Audio Quality: {audio_quality}")
+
+            else:
+                # Video download
+                format_string = self.build_format_string()
+                cmd.extend(["-f", format_string])
+
+                # Set container format
+                container = self.video_container_var.get()
+                cmd.extend(["--merge-output-format", container])
+
+                # Log settings
+                self.log_message(f"Format: Video")
+                self.log_message(f"Quality: {self.video_quality_var.get()}")
+                self.log_message(f"Video Codec: {self.video_codec_var.get()}")
+                self.log_message(f"Container: {container.upper()}")
+
+            # Add progress and other options
             cmd.extend(["--newline", "--no-playlist"])
 
             self.log_message(f"Download location: {self.download_path}")
             self.log_message("Processing...")
+            self.log_message(f"Command: {' '.join(cmd)}")
 
             # Execute command
             process = subprocess.Popen(

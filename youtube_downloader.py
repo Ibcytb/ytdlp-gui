@@ -21,17 +21,11 @@ class LanguageManager:
         self.load_language(lang_code)
 
     def load_language(self, lang_code):
-        """Load language file (.lang format)"""
-        lang_file = Path(__file__).parent / f"lang_{lang_code}.lang"
+        """Load language file (JSON format)"""
+        lang_file = Path(__file__).parent / f"lang_{lang_code}.json"
         try:
             with open(lang_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    # Skip comments and empty lines
-                    if line and not line.startswith('#'):
-                        if '=' in line:
-                            key, value = line.split('=', 1)
-                            self.translations[key.strip()] = value.strip()
+                self.translations = json.load(f)
             self.lang_code = lang_code
         except FileNotFoundError:
             print(f"Language file not found: {lang_file}")
@@ -359,6 +353,45 @@ class YouTubeDownloaderGUI:
         )
         format_radio2.pack(side="left", padx=20, pady=10)
 
+        format_radio3 = ctk.CTkRadioButton(
+            format_select_frame,
+            text=self.lang.get("thumbnail_only"),
+            variable=self.format_var,
+            value="thumbnail",
+            command=self.toggle_options,
+            font=ctk.CTkFont(size=13)
+        )
+        format_radio3.pack(side="left", padx=20, pady=10)
+
+        # Embed Options Frame
+        embed_frame = ctk.CTkFrame(format_frame)
+        embed_frame.pack(padx=10, pady=(0, 10), fill="x")
+
+        embed_title = ctk.CTkLabel(
+            embed_frame,
+            text=self.lang.get("embed_options"),
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        embed_title.grid(row=0, column=0, columnspan=2, padx=10, pady=(5, 5), sticky="w")
+
+        self.embed_thumbnail_var = ctk.BooleanVar(value=False)
+        embed_thumbnail_check = ctk.CTkCheckBox(
+            embed_frame,
+            text=self.lang.get("embed_thumbnail"),
+            variable=self.embed_thumbnail_var,
+            font=ctk.CTkFont(size=12)
+        )
+        embed_thumbnail_check.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+        self.embed_metadata_var = ctk.BooleanVar(value=False)
+        embed_metadata_check = ctk.CTkCheckBox(
+            embed_frame,
+            text=self.lang.get("embed_metadata"),
+            variable=self.embed_metadata_var,
+            font=ctk.CTkFont(size=12)
+        )
+        embed_metadata_check.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
         # Video Options Frame
         self.video_options_frame = ctk.CTkFrame(self.main_frame)
         self.video_options_frame.pack(pady=10, padx=20, fill="x")
@@ -657,13 +690,16 @@ class YouTubeDownloaderGUI:
         self.video_audio_values = self.audio_quality_values.copy()
 
     def toggle_options(self):
-        """Toggle between video and audio options"""
+        """Toggle between video, audio, and thumbnail options"""
         if self.format_var.get() == "video":
             self.video_options_frame.pack(pady=10, padx=20, fill="x", after=self.video_options_frame.master.children[list(self.video_options_frame.master.children.keys())[3]])
             self.audio_options_frame.pack_forget()
-        else:
+        elif self.format_var.get() == "audio":
             self.video_options_frame.pack_forget()
             self.audio_options_frame.pack(pady=10, padx=20, fill="x", after=self.audio_options_frame.master.children[list(self.audio_options_frame.master.children.keys())[3]])
+        else:  # thumbnail
+            self.video_options_frame.pack_forget()
+            self.audio_options_frame.pack_forget()
 
     def analyze_video(self):
         """Analyze video URL to get available formats"""
@@ -964,7 +1000,12 @@ class YouTubeDownloaderGUI:
                     self.log_message(f"Using cookies from: {browser_profile}")
 
             # Add format options
-            if self.format_var.get() == "audio":
+            if self.format_var.get() == "thumbnail":
+                # Thumbnail only download
+                cmd.extend(["--write-thumbnail", "--skip-download"])
+                self.log_message(f"Format: Thumbnail only")
+
+            elif self.format_var.get() == "audio":
                 # Audio download
                 audio_format = self.audio_format_var.get()
                 if audio_format == self.lang.get("custom_format"):
@@ -1000,6 +1041,16 @@ class YouTubeDownloaderGUI:
                 self.log_message(f"Video Codec: {self.video_codec_var.get()}")
                 self.log_message(f"Audio Bitrate: {self.video_audio_quality_var.get()}")
                 self.log_message(f"Container: {container.upper()}")
+
+            # Add embed options (for video and audio only, not for thumbnail-only mode)
+            if self.format_var.get() != "thumbnail":
+                if self.embed_thumbnail_var.get():
+                    cmd.extend(["--embed-thumbnail"])
+                    self.log_message("Embedding thumbnail")
+
+                if self.embed_metadata_var.get():
+                    cmd.extend(["--embed-metadata"])
+                    self.log_message("Embedding metadata")
 
             # Add progress and other options
             cmd.extend(["--newline", "--no-playlist"])

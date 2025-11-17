@@ -11,8 +11,8 @@
 
   "download_type": "Download Type:",
   "video": "Video",
-  "audio_only": "Audio Only",
-  "thumbnail_only": "Thumbnail Only",
+  "audio_only": "Audio",
+  "thumbnail_only": "Thumbnail",
 
   "video_options": "Video Options:",
   "audio_options": "Audio Options:",

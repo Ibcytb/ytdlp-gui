@@ -11,8 +11,8 @@
 
   "download_type": "다운로드 유형:",
   "video": "비디오",
-  "audio_only": "오디오만",
-  "thumbnail_only": "썸네일만",
+  "audio_only": "오디오",
+  "thumbnail_only": "썸네일",
 
   "video_options": "비디오 옵션:",
   "audio_options": "오디오 옵션:",

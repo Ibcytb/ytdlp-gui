@@ -83,6 +83,12 @@
   "edit_translations": "번역 편집",
   "translation_editor": "번역 편집기",
   "batch_config_title": "일괄 다운로드 설정",
+  "batch_preview": "미리보기",
+  "batch_title": "제목",
+  "batch_duration": "길이",
+  "batch_subtitle": "자막",
+  "batch_settings": "설정",
+  "subtitle_format": "자막 형식:",
   "save": "저장",
   "cancel": "취소",
 

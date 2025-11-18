@@ -83,6 +83,12 @@
   "edit_translations": "Edit Translations",
   "translation_editor": "Translation Editor",
   "batch_config_title": "Batch Download Configuration",
+  "batch_preview": "Preview",
+  "batch_title": "Title",
+  "batch_duration": "Duration",
+  "batch_subtitle": "Subtitle",
+  "batch_settings": "Settings",
+  "subtitle_format": "Subtitle Format:",
   "save": "Save",
   "cancel": "Cancel",
 

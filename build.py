@@ -43,6 +43,8 @@ def main():
         f"--add-data={ctk_path};customtkinter/",
         "--add-data=lang_ko.json;.",
         "--add-data=lang_en.json;.",
+        "--hidden-import=yt_dlp",
+        "--collect-all=yt_dlp",
         "youtube_downloader.py"
     ]
 

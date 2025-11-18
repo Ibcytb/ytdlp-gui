@@ -10,7 +10,7 @@ from pathlib import Path
 
 def main():
     print("=" * 60)
-    print("YouTube Downloader - Build Script")
+    print("IB YouTube Downloader - Build Script")
     print("=" * 60)
     print()
 
@@ -39,8 +39,10 @@ def main():
         "--noconfirm",
         "--onefile",
         "--windowed",
-        "--name", "YouTubeDownloader",
+        "--name", "IB_YouTube_Downloader",
         f"--add-data={ctk_path};customtkinter/",
+        "--add-data=lang_ko.json;.",
+        "--add-data=lang_en.json;.",
         "youtube_downloader.py"
     ]
 
@@ -49,7 +51,7 @@ def main():
     print()
     print("=" * 60)
     print("Build completed successfully!")
-    print("Executable location: dist/YouTubeDownloader.exe")
+    print("Executable location: dist/IB_YouTube_Downloader.exe")
     print("=" * 60)
     print()
     print("Note: Make sure yt-dlp is installed on the target system")

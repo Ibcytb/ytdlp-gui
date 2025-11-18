@@ -165,6 +165,9 @@ class YouTubeDownloaderGUI:
         # Check and update yt-dlp
         self.check_ytdlp_update()
 
+        # Check for app updates from GitHub
+        self.check_app_update()
+
         # Initialize UI
         self.create_widgets()
 
@@ -220,6 +223,90 @@ class YouTubeDownloaderGUI:
         thread = threading.Thread(target=update_thread)
         thread.daemon = True
         thread.start()
+
+    def check_app_update(self):
+        """Check for app updates from GitHub main branch"""
+        def update_check_thread():
+            try:
+                # Check if we're in a git repository
+                if not os.path.exists(".git"):
+                    return
+
+                # Fetch latest changes from origin
+                fetch_result = subprocess.run(
+                    ["git", "fetch", "origin", "main"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+                if fetch_result.returncode != 0:
+                    return
+
+                # Check if local main is behind origin/main
+                status_result = subprocess.run(
+                    ["git", "rev-list", "--count", "HEAD..origin/main"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if status_result.returncode == 0:
+                    commits_behind = status_result.stdout.strip()
+                    if commits_behind and int(commits_behind) > 0:
+                        # There are updates available
+                        self.window.after(0, lambda: self.prompt_update(commits_behind))
+
+            except Exception as e:
+                # Silently fail if update check fails
+                pass
+
+        thread = threading.Thread(target=update_check_thread)
+        thread.daemon = True
+        thread.start()
+
+    def prompt_update(self, commits_behind):
+        """Prompt user to update the application"""
+        response = messagebox.askyesno(
+            "업데이트 사용 가능",
+            f"새로운 버전이 있습니다!\n\n"
+            f"{commits_behind}개의 업데이트가 있습니다.\n\n"
+            f"지금 업데이트하시겠습니까?\n"
+            f"(프로그램이 재시작됩니다)"
+        )
+
+        if response:
+            self.perform_update()
+
+    def perform_update(self):
+        """Perform the update by pulling from GitHub"""
+        try:
+            # Pull latest changes
+            result = subprocess.run(
+                ["git", "pull", "origin", "main"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode == 0:
+                messagebox.showinfo(
+                    "업데이트 완료",
+                    "업데이트가 완료되었습니다!\n프로그램을 재시작합니다."
+                )
+                # Restart the application
+                python = sys.executable
+                os.execl(python, python, *sys.argv)
+            else:
+                messagebox.showerror(
+                    "업데이트 실패",
+                    f"업데이트에 실패했습니다:\n{result.stderr}"
+                )
+        except Exception as e:
+            messagebox.showerror(
+                "업데이트 오류",
+                f"업데이트 중 오류가 발생했습니다:\n{str(e)}"
+            )
 
     def create_widgets(self):
         # Create scrollable frame

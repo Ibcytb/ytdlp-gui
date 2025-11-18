@@ -8,6 +8,13 @@ import json
 import re
 import platform
 from pathlib import Path
+try:
+    from PIL import Image
+    import requests
+    from io import BytesIO
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
 # Set appearance
 ctk.set_appearance_mode("dark")
@@ -1163,38 +1170,48 @@ class YouTubeDownloaderGUI:
         """Open dialog to configure individual video settings"""
         dialog = ctk.CTkToplevel(self.window)
         dialog.title(f"Settings: {video_info['title'][:30]}...")
-        dialog.geometry("400x500")
+        dialog.geometry("400x600")
         dialog.grab_set()
 
+        # Create scrollable frame
+        scroll_frame = ctk.CTkScrollableFrame(dialog)
+        scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
+
         # Quality
-        ctk.CTkLabel(dialog, text="Video Quality:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
+        ctk.CTkLabel(scroll_frame, text="Video Quality:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
         quality_var = ctk.StringVar(value=video_info["video_quality"])
-        quality_menu = ctk.CTkComboBox(dialog, values=self.quality_values, variable=quality_var)
+        quality_menu = ctk.CTkComboBox(scroll_frame, values=self.quality_values, variable=quality_var)
         quality_menu.pack(pady=5, padx=20, fill="x")
 
         # Codec
-        ctk.CTkLabel(dialog, text="Video Codec:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
+        ctk.CTkLabel(scroll_frame, text="Video Codec:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
         codec_var = ctk.StringVar(value=video_info["video_codec"])
-        codec_menu = ctk.CTkComboBox(dialog, values=[self.lang.get("codec_any"), self.lang.get("codec_av1"), self.lang.get("codec_vp9"), self.lang.get("codec_vp8"), self.lang.get("codec_avc")], variable=codec_var)
+        codec_menu = ctk.CTkComboBox(scroll_frame, values=[self.lang.get("codec_any"), self.lang.get("codec_av1"), self.lang.get("codec_vp9"), self.lang.get("codec_vp8"), self.lang.get("codec_avc")], variable=codec_var)
         codec_menu.pack(pady=5, padx=20, fill="x")
 
         # Container
-        ctk.CTkLabel(dialog, text="Container:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
+        ctk.CTkLabel(scroll_frame, text="Container:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
         container_var = ctk.StringVar(value=video_info["video_container"])
-        container_menu = ctk.CTkComboBox(dialog, values=["mp4", "mkv", "webm", "avi", self.lang.get("custom_format")], variable=container_var)
+        container_menu = ctk.CTkComboBox(scroll_frame, values=["mp4", "mkv", "webm", "avi", self.lang.get("custom_format")], variable=container_var)
         container_menu.pack(pady=5, padx=20, fill="x")
 
         # Audio Format
-        ctk.CTkLabel(dialog, text="Audio Format:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
+        ctk.CTkLabel(scroll_frame, text="Audio Format:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
         audio_format_var = ctk.StringVar(value=video_info["audio_format"])
-        audio_format_menu = ctk.CTkComboBox(dialog, values=["mp3", "aac", "opus", "m4a", "wav", "flac", self.lang.get("custom_format")], variable=audio_format_var)
+        audio_format_menu = ctk.CTkComboBox(scroll_frame, values=["mp3", "aac", "opus", "m4a", "wav", "flac", self.lang.get("custom_format")], variable=audio_format_var)
         audio_format_menu.pack(pady=5, padx=20, fill="x")
 
         # Audio Quality
-        ctk.CTkLabel(dialog, text="Audio Quality:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
+        ctk.CTkLabel(scroll_frame, text="Audio Quality:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
         audio_quality_var = ctk.StringVar(value=video_info["audio_quality"])
-        audio_quality_menu = ctk.CTkComboBox(dialog, values=self.audio_quality_values, variable=audio_quality_var)
+        audio_quality_menu = ctk.CTkComboBox(scroll_frame, values=self.audio_quality_values, variable=audio_quality_var)
         audio_quality_menu.pack(pady=5, padx=20, fill="x")
+
+        # Subtitle Format
+        ctk.CTkLabel(scroll_frame, text=self.lang.get("subtitle_format") if "subtitle_format" in self.lang.translations else "Subtitle Format:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(10, 5), padx=20, anchor="w")
+        subtitle_format_var = ctk.StringVar(value=video_info.get("subtitle_format", "srt"))
+        subtitle_format_menu = ctk.CTkComboBox(scroll_frame, values=["srt", "vtt", "ass", "sbv"], variable=subtitle_format_var)
+        subtitle_format_menu.pack(pady=5, padx=20, fill="x")
 
         # Save button
         def save_settings():
@@ -1203,10 +1220,11 @@ class YouTubeDownloaderGUI:
             video_info["video_container"] = container_var.get()
             video_info["audio_format"] = audio_format_var.get()
             video_info["audio_quality"] = audio_quality_var.get()
+            video_info["subtitle_format"] = subtitle_format_var.get()
             dialog.destroy()
 
         button_frame = ctk.CTkFrame(dialog)
-        button_frame.pack(pady=20, padx=20, fill="x")
+        button_frame.pack(pady=10, padx=20, fill="x", side="bottom")
 
         save_btn = ctk.CTkButton(button_frame, text="Save", command=save_settings)
         save_btn.pack(side="left", padx=5)
@@ -1218,13 +1236,14 @@ class YouTubeDownloaderGUI:
         """Open window to configure download options for each URL"""
         config_window = ctk.CTkToplevel(self.window)
         config_window.title(self.lang.get("batch_config_title") if hasattr(self.lang, 'translations') and "batch_config_title" in self.lang.translations else "Batch Download Configuration")
-        config_window.geometry("900x600")
+        config_window.geometry("1000x600")
 
         # Analyze all URLs first
-        self.log_message("Analyzing videos...")
+        self.log_message(f"Analyzing {len(urls)} videos...")
         video_info_list = []
 
-        for url in urls:
+        for idx, url in enumerate(urls, 1):
+            self.log_message(f"Analyzing video {idx}/{len(urls)}...")
             try:
                 cmd = ["yt-dlp", "-J", "--no-playlist", url]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -1234,14 +1253,20 @@ class YouTubeDownloaderGUI:
                     title = data.get("title", "Unknown")
                     duration = data.get("duration", 0)
                     duration_str = f"{int(duration//60)}:{int(duration%60):02d}" if duration else "Unknown"
+                    thumbnail_url = data.get("thumbnail", "")
+
+                    self.log_message(f"✓ {title[:50]} - {duration_str}")
 
                     video_info_list.append({
                         "url": url,
                         "title": title,
                         "duration": duration_str,
+                        "thumbnail_url": thumbnail_url,
                         "download_video": ctk.BooleanVar(value=self.download_video_var.get()),
                         "download_audio": ctk.BooleanVar(value=self.download_audio_var.get()),
                         "download_thumbnail": ctk.BooleanVar(value=self.download_thumbnail_var.get()),
+                        "download_subtitle": ctk.BooleanVar(value=False),
+                        "subtitle_format": "srt",
                         "video_quality": self.video_quality_var.get(),
                         "video_codec": self.video_codec_var.get(),
                         "video_container": self.video_container_var.get(),
@@ -1249,13 +1274,17 @@ class YouTubeDownloaderGUI:
                         "audio_quality": self.audio_quality_var.get()
                     })
                 else:
+                    self.log_message(f"✗ Error analyzing URL")
                     video_info_list.append({
                         "url": url,
                         "title": "Error analyzing",
                         "duration": "Unknown",
+                        "thumbnail_url": "",
                         "download_video": ctk.BooleanVar(value=True),
                         "download_audio": ctk.BooleanVar(value=False),
                         "download_thumbnail": ctk.BooleanVar(value=False),
+                        "download_subtitle": ctk.BooleanVar(value=False),
+                        "subtitle_format": "srt",
                         "video_quality": self.video_quality_var.get(),
                         "video_codec": self.video_codec_var.get(),
                         "video_container": self.video_container_var.get(),
@@ -1263,13 +1292,17 @@ class YouTubeDownloaderGUI:
                         "audio_quality": self.audio_quality_var.get()
                     })
             except Exception as e:
+                self.log_message(f"✗ Error: {str(e)}")
                 video_info_list.append({
                     "url": url,
                     "title": f"Error: {str(e)}",
                     "duration": "Unknown",
+                    "thumbnail_url": "",
                     "download_video": ctk.BooleanVar(value=True),
                     "download_audio": ctk.BooleanVar(value=False),
                     "download_thumbnail": ctk.BooleanVar(value=False),
+                    "download_subtitle": ctk.BooleanVar(value=False),
+                    "subtitle_format": "srt",
                     "video_quality": self.video_quality_var.get(),
                     "video_codec": self.video_codec_var.get(),
                     "video_container": self.video_container_var.get(),
@@ -1285,39 +1318,75 @@ class YouTubeDownloaderGUI:
         header_frame = ctk.CTkFrame(scroll_frame)
         header_frame.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(header_frame, text="Title", font=ctk.CTkFont(weight="bold"), width=250).grid(row=0, column=0, padx=5)
-        ctk.CTkLabel(header_frame, text="Duration", font=ctk.CTkFont(weight="bold"), width=70).grid(row=0, column=1, padx=5)
-        ctk.CTkLabel(header_frame, text="Video", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=2, padx=5)
-        ctk.CTkLabel(header_frame, text="Audio", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=3, padx=5)
-        ctk.CTkLabel(header_frame, text="Thumbnail", font=ctk.CTkFont(weight="bold"), width=70).grid(row=0, column=4, padx=5)
-        ctk.CTkLabel(header_frame, text="Settings", font=ctk.CTkFont(weight="bold"), width=70).grid(row=0, column=5, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_preview") if "batch_preview" in self.lang.translations else "미리보기", font=ctk.CTkFont(weight="bold"), width=70).grid(row=0, column=0, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_title") if "batch_title" in self.lang.translations else "제목", font=ctk.CTkFont(weight="bold"), width=170).grid(row=0, column=1, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_duration") if "batch_duration" in self.lang.translations else "길이", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=2, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("video") if "video" in self.lang.translations else "비디오", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=3, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("audio_only") if "audio_only" in self.lang.translations else "오디오", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=4, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("thumbnail_only") if "thumbnail_only" in self.lang.translations else "썸네일", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=5, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_subtitle") if "batch_subtitle" in self.lang.translations else "자막", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=6, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_settings") if "batch_settings" in self.lang.translations else "설정", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=7, padx=5)
+
+        # Helper function to show thumbnail preview
+        def show_thumbnail_preview(thumbnail_url, title):
+            if not thumbnail_url or not HAS_PIL:
+                messagebox.showinfo("Info", "Thumbnail not available" if not thumbnail_url else "PIL library not installed")
+                return
+
+            preview_window = ctk.CTkToplevel(config_window)
+            preview_window.title(f"Preview: {title[:30]}...")
+            preview_window.geometry("480x360")
+
+            try:
+                response = requests.get(thumbnail_url, timeout=10)
+                response.raise_for_status()
+                img = Image.open(BytesIO(response.content))
+
+                # Resize to fit window
+                img.thumbnail((460, 340), Image.Resampling.LANCZOS)
+                ctk_image = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
+
+                img_label = ctk.CTkLabel(preview_window, image=ctk_image, text="")
+                img_label.pack(pady=10, padx=10)
+            except Exception as e:
+                ctk.CTkLabel(preview_window, text=f"Error loading thumbnail:\n{str(e)}").pack(pady=20, padx=20)
 
         # Video rows
         for info in video_info_list:
             row_frame = ctk.CTkFrame(scroll_frame)
             row_frame.pack(fill="x", padx=5, pady=2)
 
-            title_label = ctk.CTkLabel(row_frame, text=info["title"][:40] + "..." if len(info["title"]) > 40 else info["title"], width=250, anchor="w")
-            title_label.grid(row=0, column=0, padx=5, sticky="w")
+            # Thumbnail preview button
+            def show_preview(url=info["thumbnail_url"], title=info["title"]):
+                show_thumbnail_preview(url, title)
 
-            duration_label = ctk.CTkLabel(row_frame, text=info["duration"], width=70)
-            duration_label.grid(row=0, column=1, padx=5)
+            preview_btn = ctk.CTkButton(row_frame, text="🖼️", width=70, command=show_preview)
+            preview_btn.grid(row=0, column=0, padx=5)
+
+            title_label = ctk.CTkLabel(row_frame, text=info["title"][:30] + "..." if len(info["title"]) > 30 else info["title"], width=170, anchor="w")
+            title_label.grid(row=0, column=1, padx=5, sticky="w")
+
+            duration_label = ctk.CTkLabel(row_frame, text=info["duration"], width=60)
+            duration_label.grid(row=0, column=2, padx=5)
 
             video_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_video"], width=50)
-            video_check.grid(row=0, column=2, padx=5)
+            video_check.grid(row=0, column=3, padx=5)
 
             audio_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_audio"], width=50)
-            audio_check.grid(row=0, column=3, padx=5)
+            audio_check.grid(row=0, column=4, padx=5)
 
-            thumb_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_thumbnail"], width=70)
-            thumb_check.grid(row=0, column=4, padx=5)
+            thumb_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_thumbnail"], width=50)
+            thumb_check.grid(row=0, column=5, padx=5)
+
+            subtitle_check = ctk.CTkCheckBox(row_frame, text="", variable=info["download_subtitle"], width=50)
+            subtitle_check.grid(row=0, column=6, padx=5)
 
             # Settings button for each video
             def open_video_settings(video_info=info):
                 self.open_video_settings_dialog(video_info)
 
-            settings_btn = ctk.CTkButton(row_frame, text="⚙", width=70, command=open_video_settings)
-            settings_btn.grid(row=0, column=5, padx=5)
+            settings_btn = ctk.CTkButton(row_frame, text="⚙", width=60, command=open_video_settings)
+            settings_btn.grid(row=0, column=7, padx=5)
 
         # Button frame
         button_frame = ctk.CTkFrame(config_window)
@@ -1370,6 +1439,14 @@ class YouTubeDownloaderGUI:
             if info["download_thumbnail"].get():
                 self.log_message("Downloading thumbnail...")
                 self.download_video(info["url"], download_type="thumbnail")
+
+            if info["download_subtitle"].get():
+                self.log_message(f"Downloading subtitle ({info['subtitle_format']})...")
+                self.download_video(
+                    info["url"],
+                    download_type="subtitle",
+                    subtitle_format=info["subtitle_format"]
+                )
 
         self.download_button.configure(state="normal")
         self.log_message("\n" + "="*50)
@@ -1485,7 +1562,7 @@ class YouTubeDownloaderGUI:
         return format_string
 
     def download_video(self, url, download_type=None, video_quality=None, video_codec=None,
-                      video_container=None, audio_format=None, audio_quality=None):
+                      video_container=None, audio_format=None, audio_quality=None, subtitle_format=None):
         try:
             self.log_message(f"Starting download: {url}")
             self.progress_label.configure(text=self.lang.get("downloading"))
@@ -1523,9 +1600,17 @@ class YouTubeDownloaderGUI:
             _video_quality = video_quality if video_quality is not None else self.video_quality_var.get()
             _video_codec = video_codec if video_codec is not None else self.video_codec_var.get()
             _video_container = video_container if video_container is not None else self.video_container_var.get()
+            _subtitle_format = subtitle_format if subtitle_format is not None else "srt"
 
             # Add format options
-            if download_type == "thumbnail":
+            if download_type == "subtitle":
+                # Subtitle download
+                cmd.extend(["--write-subs", "--write-auto-subs", "--skip-download"])
+                cmd.extend(["--sub-format", _subtitle_format])
+                cmd.extend(["--convert-subs", _subtitle_format])
+                self.log_message(f"Format: Subtitle ({_subtitle_format})")
+
+            elif download_type == "thumbnail":
                 # Thumbnail only download
                 cmd.extend(["--write-thumbnail", "--skip-download"])
                 self.log_message(f"Format: Thumbnail only")

@@ -29,9 +29,19 @@ class LanguageManager:
         self.translations = {}
         self.load_language(lang_code)
 
+    def get_resource_path(self, filename):
+        """Get absolute path to resource, works for dev and PyInstaller"""
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            base_path = Path(sys._MEIPASS)
+        else:
+            # Running as script
+            base_path = Path(__file__).parent
+        return base_path / filename
+
     def load_language(self, lang_code):
         """Load language file (JSON format)"""
-        lang_file = Path(__file__).parent / f"lang_{lang_code}.json"
+        lang_file = self.get_resource_path(f"lang_{lang_code}.json")
         try:
             with open(lang_file, 'r', encoding='utf-8') as f:
                 self.translations = json.load(f)
@@ -133,8 +143,9 @@ class YouTubeDownloaderGUI:
     def __init__(self):
         self.window = ctk.CTk()
 
-        # Language manager
-        self.lang = LanguageManager("ko")  # Default Korean
+        # Load config and initialize language manager
+        self.config = self.load_config()
+        self.lang = LanguageManager(self.config.get("language", "ko"))
 
         self.window.title(self.lang.get("app_title"))
 
@@ -198,13 +209,51 @@ class YouTubeDownloaderGUI:
         y = (self.window.winfo_screenheight() // 2) - (height // 2)
         self.window.geometry(f'{width}x{height}+{x}+{y}')
 
+    def get_config_path(self):
+        """Get path for config file - writable location"""
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable - use user home directory
+            config_dir = Path.home() / ".ib_youtube_downloader"
+            config_dir.mkdir(exist_ok=True)
+            return config_dir / "config.json"
+        else:
+            # Running as script - use script directory
+            return Path(__file__).parent / "config.json"
+
+    def load_config(self):
+        """Load configuration from config.json"""
+        config_file = self.get_config_path()
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {"language": "ko"}  # Default config
+
+    def save_config(self):
+        """Save configuration to config.json"""
+        config_file = self.get_config_path()
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Failed to save config: {e}")
+
+    def get_ytdlp_command(self):
+        """Get yt-dlp command - works in both dev and bundled mode"""
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable - use Python module
+            return [sys.executable, "-m", "yt_dlp"]
+        else:
+            # Running as script - use yt-dlp command
+            return ["yt-dlp"]
+
     def check_ytdlp_update(self):
         """Check and update yt-dlp at startup"""
         def update_thread():
             try:
                 # Check if yt-dlp is installed
                 result = subprocess.run(
-                    ["yt-dlp", "--version"],
+                    self.get_ytdlp_command() + ["--version"],
                     capture_output=True,
                     text=True,
                     timeout=5
@@ -213,7 +262,7 @@ class YouTubeDownloaderGUI:
                 if result.returncode == 0:
                     # Update yt-dlp
                     subprocess.run(
-                        ["yt-dlp", "-U"],
+                        self.get_ytdlp_command() + ["-U"],
                         capture_output=True,
                         timeout=30
                     )
@@ -331,7 +380,9 @@ class YouTubeDownloaderGUI:
         lang_label = ctk.CTkLabel(lang_frame, text=self.lang.get("language"), font=ctk.CTkFont(size=12))
         lang_label.pack(side="left", padx=5)
 
-        self.lang_var = ctk.StringVar(value="한국어")
+        # Set language dropdown based on loaded config
+        current_lang_display = "한국어" if self.lang.lang_code == "ko" else "English"
+        self.lang_var = ctk.StringVar(value=current_lang_display)
         lang_menu = ctk.CTkComboBox(
             lang_frame,
             values=["English", "한국어"],
@@ -794,6 +845,10 @@ class YouTubeDownloaderGUI:
         lang_code = "ko" if choice == "한국어" else "en"
         self.lang.load_language(lang_code)
 
+        # Save language preference to config
+        self.config["language"] = lang_code
+        self.save_config()
+
         # Refresh UI
         messagebox.showinfo(
             self.lang.get("success_title"),
@@ -1042,7 +1097,7 @@ class YouTubeDownloaderGUI:
                 self.log_message(f"Analyzing {idx}/{len(urls)}: {url}")
 
                 # Get video information with JSON output
-                cmd = ["yt-dlp", "-J", "--no-playlist", url]
+                cmd = self.get_ytdlp_command() + ["-J", "--no-playlist", url]
 
                 # Add cookie options if enabled
                 if self.use_cookies_var.get():
@@ -1339,7 +1394,7 @@ class YouTubeDownloaderGUI:
         """Check if yt-dlp is available"""
         try:
             result = subprocess.run(
-                ["yt-dlp", "--version"],
+                self.get_ytdlp_command() + ["--version"],
                 capture_output=True,
                 text=True,
                 timeout=5
@@ -1555,7 +1610,7 @@ class YouTubeDownloaderGUI:
             for idx, url in enumerate(urls, 1):
                 self.log_message(f"Analyzing video {idx}/{len(urls)}...")
                 try:
-                    cmd = ["yt-dlp", "-J", "--no-playlist", url]
+                    cmd = self.get_ytdlp_command() + ["-J", "--no-playlist", url]
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
                     if result.returncode == 0:
@@ -1954,7 +2009,7 @@ class YouTubeDownloaderGUI:
             # Build yt-dlp command
             output_template = os.path.join(self.download_path, "%(title)s.%(ext)s")
 
-            cmd = ["yt-dlp", url, "-o", output_template]
+            cmd = self.get_ytdlp_command() + [url, "-o", output_template]
 
             # Add cookie options if enabled
             if self.use_cookies_var.get():

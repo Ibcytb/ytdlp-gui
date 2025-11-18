@@ -294,14 +294,14 @@ class YouTubeDownloaderGUI:
         self.url_entry.bind('<KeyRelease>', self.on_url_change)
         self.url_entry.bind('<<Paste>>', self.on_url_paste)
 
-        # Analysis Status Label
-        self.analysis_status = ctk.CTkLabel(
+        # Analysis Status Textbox (for multiple results)
+        self.analysis_status = ctk.CTkTextbox(
             url_frame,
-            text="",
-            font=ctk.CTkFont(size=11),
-            text_color="gray"
+            height=60,
+            font=ctk.CTkFont(size=11)
         )
-        self.analysis_status.pack(padx=10, pady=(0, 10))
+        self.analysis_status.pack(padx=10, pady=(5, 10), fill="x")
+        self.analysis_status.configure(state="disabled")  # Read-only
 
         # Cookie Settings Frame
         cookie_frame = ctk.CTkFrame(self.main_frame)
@@ -812,16 +812,15 @@ class YouTubeDownloaderGUI:
 
     def analyze_video(self):
         """Analyze video URL to get available formats"""
-        # Get first valid URL from textbox
+        # Get all valid URLs from textbox
         current_text = self.url_entry.get("1.0", "end").strip()
-        url = ""
+        urls = []
         for line in current_text.split('\n'):
             line = line.strip()
             if line and line.startswith("http") and "youtube.com/watch?v=..." not in line:
-                url = line
-                break
+                urls.append(line)
 
-        if not url:
+        if not urls:
             return
 
         # Check if yt-dlp is installed
@@ -833,81 +832,104 @@ class YouTubeDownloaderGUI:
             return
 
         self.auto_analyzing = True
-        self.analysis_status.configure(text=self.lang.get("analyzing"))
+        # Clear previous analysis results
+        self.analysis_status.configure(state="normal")
+        self.analysis_status.delete("1.0", "end")
+        self.analysis_status.insert("1.0", self.lang.get("analyzing") + "\n")
+        self.analysis_status.configure(state="disabled")
 
-        # Start analysis in separate thread
-        thread = threading.Thread(target=self._analyze_video_thread, args=(url,))
+        # Start analysis in separate thread for all URLs
+        thread = threading.Thread(target=self._analyze_video_thread, args=(urls,))
         thread.daemon = True
         thread.start()
 
-    def _analyze_video_thread(self, url):
-        """Thread function to analyze video formats"""
+    def _analyze_video_thread(self, urls):
+        """Thread function to analyze video formats for multiple URLs"""
+        # Convert single URL to list for backward compatibility
+        if isinstance(urls, str):
+            urls = [urls]
+
         try:
-            self.log_message(f"Analyzing: {url}")
+            for idx, url in enumerate(urls, 1):
+                self.log_message(f"Analyzing {idx}/{len(urls)}: {url}")
 
-            # Get video information with JSON output
-            cmd = ["yt-dlp", "-J", "--no-playlist", url]
+                # Get video information with JSON output
+                cmd = ["yt-dlp", "-J", "--no-playlist", url]
 
-            # Add cookie options if enabled
-            if self.use_cookies_var.get():
-                browser = self.browser_var.get()
-                profile = self.profile_var.get()
-                if browser and browser != self.lang.get("no_browsers_found"):
-                    browser_profile = f"{browser}:{profile}" if profile and profile != "Default" else browser
-                    cmd.extend(["--cookies-from-browser", browser_profile])
+                # Add cookie options if enabled
+                if self.use_cookies_var.get():
+                    browser = self.browser_var.get()
+                    profile = self.profile_var.get()
+                    if browser and browser != self.lang.get("no_browsers_found"):
+                        browser_profile = f"{browser}:{profile}" if profile and profile != "Default" else browser
+                        cmd.extend(["--cookies-from-browser", browser_profile])
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
 
-            if result.returncode != 0:
-                self.analysis_status.configure(text=self.lang.get("analysis_failed"), text_color="red")
-                self.log_message(f"Analysis error: {result.stderr}")
-                return
+                if result.returncode != 0:
+                    error_msg = f"✗ Video {idx}: {self.lang.get('analysis_failed')}\n"
+                    self.analysis_status.configure(state="normal")
+                    self.analysis_status.insert("end", error_msg)
+                    self.analysis_status.configure(state="disabled")
+                    self.log_message(f"Analysis error: {result.stderr}")
+                    continue
 
-            # Parse JSON output
-            data = json.loads(result.stdout)
-            formats = data.get("formats", [])
+                # Parse JSON output
+                data = json.loads(result.stdout)
+                formats = data.get("formats", [])
 
-            # Find max video height and audio bitrate
-            max_height = 0
-            max_audio_br = 0
+                # Find max video height and audio bitrate
+                max_height = 0
+                max_audio_br = 0
 
-            for fmt in formats:
-                # Check video height
-                if fmt.get("height"):
-                    max_height = max(max_height, fmt["height"])
+                for fmt in formats:
+                    # Check video height
+                    if fmt.get("height"):
+                        max_height = max(max_height, fmt["height"])
 
-                # Check audio bitrate
-                if fmt.get("abr"):
-                    max_audio_br = max(max_audio_br, fmt["abr"])
-                elif fmt.get("tbr") and not fmt.get("height"):  # Audio-only format
-                    max_audio_br = max(max_audio_br, fmt["tbr"])
+                    # Check audio bitrate
+                    if fmt.get("abr"):
+                        max_audio_br = max(max_audio_br, fmt["abr"])
+                    elif fmt.get("tbr") and not fmt.get("height"):  # Audio-only format
+                        max_audio_br = max(max_audio_br, fmt["tbr"])
 
-            self.max_height = max_height
-            self.max_audio_bitrate = int(max_audio_br)
+                # Store max values from last analyzed video for quality options
+                self.max_height = max_height
+                self.max_audio_bitrate = int(max_audio_br)
 
-            # Update UI
-            self.update_quality_options()
+                # Update UI
+                self.update_quality_options()
 
-            video_title = data.get("title", "Unknown")
-            self.analysis_status.configure(
-                text=self.lang.get("analysis_complete", height=max_height, audio=int(max_audio_br), title=video_title[:50]),
-                text_color="green"
-            )
-            self.log_message(f"Analysis complete - Max video: {max_height}p, Max audio: {int(max_audio_br)} kbps")
+                video_title = data.get("title", "Unknown")
+                # Add result to analysis status textbox
+                result_msg = f"✓ Video {idx}: {video_title[:40]}... | {max_height}p, {int(max_audio_br)} kbps\n"
+                self.analysis_status.configure(state="normal", text_color=("green", "green"))
+                self.analysis_status.insert("end", result_msg)
+                self.analysis_status.configure(state="disabled")
+                self.log_message(f"Analysis complete - Max video: {max_height}p, Max audio: {int(max_audio_br)} kbps")
 
         except subprocess.TimeoutExpired:
-            self.analysis_status.configure(text=self.lang.get("analysis_timeout"), text_color="red")
+            error_msg = f"✗ {self.lang.get('analysis_timeout')}\n"
+            self.analysis_status.configure(state="normal")
+            self.analysis_status.insert("end", error_msg)
+            self.analysis_status.configure(state="disabled")
             self.log_message("Analysis timeout - URL may be invalid or network is slow")
         except json.JSONDecodeError:
-            self.analysis_status.configure(text=self.lang.get("analysis_failed"), text_color="red")
+            error_msg = f"✗ {self.lang.get('analysis_failed')}\n"
+            self.analysis_status.configure(state="normal")
+            self.analysis_status.insert("end", error_msg)
+            self.analysis_status.configure(state="disabled")
             self.log_message("Failed to parse video information")
         except Exception as e:
-            self.analysis_status.configure(text=self.lang.get("analysis_error"), text_color="red")
+            error_msg = f"✗ {self.lang.get('analysis_error')}: {str(e)}\n"
+            self.analysis_status.configure(state="normal")
+            self.analysis_status.insert("end", error_msg)
+            self.analysis_status.configure(state="disabled")
             self.log_message(f"Analysis error: {str(e)}")
         finally:
             self.auto_analyzing = False
@@ -1238,6 +1260,16 @@ class YouTubeDownloaderGUI:
         config_window.title(self.lang.get("batch_config_title") if hasattr(self.lang, 'translations') and "batch_config_title" in self.lang.translations else "Batch Download Configuration")
         config_window.geometry("1000x600")
 
+        # Disable download button while config window is open
+        self.download_button.configure(state="disabled")
+
+        # Re-enable download button when config window is closed
+        def on_config_window_close():
+            self.download_button.configure(state="normal")
+            config_window.destroy()
+
+        config_window.protocol("WM_DELETE_WINDOW", on_config_window_close)
+
         # Analyze all URLs first
         self.log_message(f"Analyzing {len(urls)} videos...")
         video_info_list = []
@@ -1318,8 +1350,8 @@ class YouTubeDownloaderGUI:
         header_frame = ctk.CTkFrame(scroll_frame)
         header_frame.pack(fill="x", padx=5, pady=5)
 
-        ctk.CTkLabel(header_frame, text=self.lang.get("batch_preview") if "batch_preview" in self.lang.translations else "미리보기", font=ctk.CTkFont(weight="bold"), width=70).grid(row=0, column=0, padx=5)
-        ctk.CTkLabel(header_frame, text=self.lang.get("batch_title") if "batch_title" in self.lang.translations else "제목", font=ctk.CTkFont(weight="bold"), width=170).grid(row=0, column=1, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_preview") if "batch_preview" in self.lang.translations else "미리보기", font=ctk.CTkFont(weight="bold"), width=120).grid(row=0, column=0, padx=5)
+        ctk.CTkLabel(header_frame, text=self.lang.get("batch_title") if "batch_title" in self.lang.translations else "제목", font=ctk.CTkFont(weight="bold"), width=180).grid(row=0, column=1, padx=5)
         ctk.CTkLabel(header_frame, text=self.lang.get("batch_duration") if "batch_duration" in self.lang.translations else "길이", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=2, padx=5)
         ctk.CTkLabel(header_frame, text=self.lang.get("video") if "video" in self.lang.translations else "비디오", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=3, padx=5)
         ctk.CTkLabel(header_frame, text=self.lang.get("audio_only") if "audio_only" in self.lang.translations else "오디오", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=4, padx=5)
@@ -1327,43 +1359,42 @@ class YouTubeDownloaderGUI:
         ctk.CTkLabel(header_frame, text=self.lang.get("batch_subtitle") if "batch_subtitle" in self.lang.translations else "자막", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=6, padx=5)
         ctk.CTkLabel(header_frame, text=self.lang.get("batch_settings") if "batch_settings" in self.lang.translations else "설정", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=7, padx=5)
 
-        # Helper function to show thumbnail preview
-        def show_thumbnail_preview(thumbnail_url, title):
+        # Helper function to load thumbnail image
+        def load_thumbnail(thumbnail_url):
+            """Load thumbnail image and return CTkImage"""
             if not thumbnail_url or not HAS_PIL:
-                messagebox.showinfo("Info", "Thumbnail not available" if not thumbnail_url else "PIL library not installed")
-                return
-
-            preview_window = ctk.CTkToplevel(config_window)
-            preview_window.title(f"Preview: {title[:30]}...")
-            preview_window.geometry("480x360")
+                return None
 
             try:
-                response = requests.get(thumbnail_url, timeout=10)
+                response = requests.get(thumbnail_url, timeout=5)
                 response.raise_for_status()
                 img = Image.open(BytesIO(response.content))
 
-                # Resize to fit window
-                img.thumbnail((460, 340), Image.Resampling.LANCZOS)
-                ctk_image = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
-
-                img_label = ctk.CTkLabel(preview_window, image=ctk_image, text="")
-                img_label.pack(pady=10, padx=10)
+                # Resize to 120x68 (16:9 aspect ratio)
+                img.thumbnail((120, 68), Image.Resampling.LANCZOS)
+                ctk_image = ctk.CTkImage(light_image=img, dark_image=img, size=(120, 68))
+                return ctk_image
             except Exception as e:
-                ctk.CTkLabel(preview_window, text=f"Error loading thumbnail:\n{str(e)}").pack(pady=20, padx=20)
+                self.log_message(f"Failed to load thumbnail: {str(e)}")
+                return None
 
         # Video rows
         for info in video_info_list:
             row_frame = ctk.CTkFrame(scroll_frame)
             row_frame.pack(fill="x", padx=5, pady=2)
 
-            # Thumbnail preview button
-            def show_preview(url=info["thumbnail_url"], title=info["title"]):
-                show_thumbnail_preview(url, title)
+            # Load and display thumbnail image directly
+            thumbnail_image = load_thumbnail(info["thumbnail_url"])
+            if thumbnail_image:
+                thumbnail_label = ctk.CTkLabel(row_frame, image=thumbnail_image, text="")
+                thumbnail_label.image = thumbnail_image  # Keep reference
+                thumbnail_label.grid(row=0, column=0, padx=5)
+            else:
+                # Placeholder if thumbnail not available
+                placeholder_label = ctk.CTkLabel(row_frame, text="No\nPreview", width=120, height=68, fg_color="gray30")
+                placeholder_label.grid(row=0, column=0, padx=5)
 
-            preview_btn = ctk.CTkButton(row_frame, text="🖼️", width=70, command=show_preview)
-            preview_btn.grid(row=0, column=0, padx=5)
-
-            title_label = ctk.CTkLabel(row_frame, text=info["title"][:30] + "..." if len(info["title"]) > 30 else info["title"], width=170, anchor="w")
+            title_label = ctk.CTkLabel(row_frame, text=info["title"][:35] + "..." if len(info["title"]) > 35 else info["title"], width=180, anchor="w")
             title_label.grid(row=0, column=1, padx=5, sticky="w")
 
             duration_label = ctk.CTkLabel(row_frame, text=info["duration"], width=60)
@@ -1403,7 +1434,7 @@ class YouTubeDownloaderGUI:
         start_button = ctk.CTkButton(button_frame, text=self.lang.get("download"), command=start_batch_download)
         start_button.pack(side="left", padx=5)
 
-        cancel_button = ctk.CTkButton(button_frame, text=self.lang.get("cancel"), command=config_window.destroy)
+        cancel_button = ctk.CTkButton(button_frame, text=self.lang.get("cancel"), command=on_config_window_close)
         cancel_button.pack(side="left", padx=5)
 
     def download_batch_with_config(self, video_info_list):

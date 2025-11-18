@@ -776,15 +776,21 @@ class YouTubeDownloaderGUI:
             self.format_frame.pack_forget()
             self.video_options_frame.pack_forget()
             self.audio_options_frame.pack_forget()
+            self.subtitle_options_frame.pack_forget()
             self.download_button.configure(text=self.lang.get("batch_download_button")
                                           if "batch_download_button" in self.lang.translations
                                           else "일괄 다운로드 및 옵션 변경")
         else:
             # Single or no URL - show normal UI
+            is_visible = False
             try:
                 # Check if format_frame is currently visible
-                self.format_frame.winfo_manager()
+                if self.format_frame.winfo_manager():
+                    is_visible = True
             except:
+                pass
+
+            if not is_visible:
                 # If not visible, show it
                 # Insert format_frame after URL frame (which is at index 2)
                 children = list(self.main_frame.children.values())
@@ -1491,6 +1497,11 @@ class YouTubeDownloaderGUI:
                         available_subtitle_langs = list(set(list(subtitles.keys()) + list(automatic_captions.keys())))
                         if not available_subtitle_langs:
                             available_subtitle_langs = ["en"]  # Default to English if no subtitles found
+
+                        # Download and cache thumbnail
+                        if thumbnail_url:
+                            url_hash = abs(hash(url)) % (10 ** 8)
+                            self.download_and_cache_thumbnail(thumbnail_url, url_hash)
 
                         self.log_message(f"✓ {title[:50]} - {duration_str} | {max_height}p, {int(max_audio_br)} kbps")
 

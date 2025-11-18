@@ -1722,6 +1722,12 @@ class YouTubeDownloaderGUI:
         self.log_message("All downloads completed!")
         self.log_message("="*50 + "\n")
 
+        # Show completion notification
+        messagebox.showinfo(
+            self.lang.get("success_title") if "success_title" in self.lang.translations else "완료",
+            f"모든 다운로드가 완료되었습니다!\n총 {total}개의 동영상"
+        )
+
     def download_single_with_types(self, url):
         """Download single URL with selected types"""
         try:
@@ -1750,6 +1756,12 @@ class YouTubeDownloaderGUI:
         finally:
             self.download_button.configure(state="normal")
 
+            # Show completion notification
+            messagebox.showinfo(
+                self.lang.get("success_title") if "success_title" in self.lang.translations else "완료",
+                "다운로드가 완료되었습니다!"
+            )
+
     def download_multiple_videos(self, urls):
         """Download multiple videos sequentially"""
         total = len(urls)
@@ -1761,6 +1773,12 @@ class YouTubeDownloaderGUI:
 
         # Re-enable download button after all downloads
         self.download_button.configure(state="normal")
+
+        # Show completion notification
+        messagebox.showinfo(
+            self.lang.get("success_title") if "success_title" in self.lang.translations else "완료",
+            f"모든 다운로드가 완료되었습니다!\n총 {total}개의 동영상"
+        )
 
     def get_height_from_quality(self, quality_text):
         """Extract height from quality text"""
@@ -1995,16 +2013,16 @@ class YouTubeDownloaderGUI:
                 self.progress_bar.set(1.0)
                 self.progress_label.configure(text=self.lang.get("download_completed"))
                 self.log_message("Download completed successfully!")
-                messagebox.showinfo(self.lang.get("success_title"), self.lang.get("success_message"))
+                return True
             else:
                 self.progress_label.configure(text=self.lang.get("download_failed"))
                 self.log_message("Download failed!")
-                messagebox.showerror(self.lang.get("error_title"), "Download failed. Check the log for details.")
+                return False
 
         except Exception as e:
             self.log_message(f"Error: {str(e)}")
             self.progress_label.configure(text=self.lang.get("error_occurred"))
-            messagebox.showerror(self.lang.get("error_title"), f"An error occurred:\n{str(e)}")
+            return False
 
     def run(self):
         self.window.mainloop()

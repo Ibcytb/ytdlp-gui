@@ -166,6 +166,9 @@ class YouTubeDownloaderGUI:
         self.thumbnail_cache_dir.mkdir(exist_ok=True)
         self.thumbnail_cache = {}  # url -> (local_path, ctk_image)
 
+        # Video analysis cache - stores analysis results to avoid re-analyzing
+        self.video_analysis_cache = {}  # url -> video_info dict
+
         # Detect installed browsers
         self.browsers = BrowserDetector.detect_browsers()
         self.browser_profiles = {}
@@ -1149,12 +1152,32 @@ class YouTubeDownloaderGUI:
                 self.update_quality_options()
 
                 video_title = data.get("title", "Unknown")
+                duration = data.get("duration", 0)
+                duration_str = f"{int(duration//60)}:{int(duration%60):02d}" if duration else "Unknown"
 
                 # Download and cache thumbnail
                 thumbnail_url = data.get("thumbnail", "")
                 if thumbnail_url:
                     url_hash = abs(hash(url)) % (10 ** 8)
                     self.download_and_cache_thumbnail(thumbnail_url, url_hash)
+
+                # Get available subtitles
+                subtitles = data.get("subtitles", {})
+                automatic_captions = data.get("automatic_captions", {})
+                available_subtitle_langs = list(set(list(subtitles.keys()) + list(automatic_captions.keys())))
+                if not available_subtitle_langs:
+                    available_subtitle_langs = ["en"]
+
+                # Cache the analysis result for reuse in batch download
+                self.video_analysis_cache[url] = {
+                    "url": url,
+                    "title": video_title,
+                    "duration": duration_str,
+                    "thumbnail_url": thumbnail_url,
+                    "max_height": max_height,
+                    "max_audio_bitrate": int(max_audio_br),
+                    "available_subtitle_langs": available_subtitle_langs
+                }
 
                 # Add result to analysis status textbox
                 result_msg = f"✓ Video {idx}: {video_title[:40]}... | {max_height}p, {int(max_audio_br)} kbps\n"
@@ -1605,9 +1628,37 @@ class YouTubeDownloaderGUI:
 
         def analyze_videos_thread():
             """Analyze all videos in background thread"""
-            self.log_message(f"Analyzing {len(urls)} videos...")
+            self.log_message(f"Processing {len(urls)} videos...")
 
             for idx, url in enumerate(urls, 1):
+                # Check if we have cached analysis for this URL
+                if url in self.video_analysis_cache:
+                    cached = self.video_analysis_cache[url]
+                    self.log_message(f"Using cached analysis for video {idx}/{len(urls)}: {cached['title'][:40]}...")
+
+                    video_info_list.append({
+                        "url": url,
+                        "title": cached["title"],
+                        "duration": cached["duration"],
+                        "thumbnail_url": cached["thumbnail_url"],
+                        "max_height": cached["max_height"],
+                        "max_audio_bitrate": cached["max_audio_bitrate"],
+                        "available_subtitle_langs": cached["available_subtitle_langs"],
+                        "download_video": ctk.BooleanVar(value=self.download_video_var.get()),
+                        "download_audio": ctk.BooleanVar(value=self.download_audio_var.get()),
+                        "download_thumbnail": ctk.BooleanVar(value=self.download_thumbnail_var.get()),
+                        "download_subtitle": ctk.BooleanVar(value=False),
+                        "subtitle_format": "srt",
+                        "subtitle_language": cached["available_subtitle_langs"][0] if cached["available_subtitle_langs"] else "en",
+                        "video_quality": self.video_quality_var.get(),
+                        "video_codec": self.video_codec_var.get(),
+                        "video_container": self.video_container_var.get(),
+                        "audio_format": self.audio_format_var.get(),
+                        "audio_quality": self.audio_quality_var.get()
+                    })
+                    continue
+
+                # No cache - need to analyze
                 self.log_message(f"Analyzing video {idx}/{len(urls)}...")
                 try:
                     cmd = self.get_ytdlp_command() + ["-J", "--no-playlist", url]
@@ -1644,6 +1695,17 @@ class YouTubeDownloaderGUI:
                         if thumbnail_url:
                             url_hash = abs(hash(url)) % (10 ** 8)
                             self.download_and_cache_thumbnail(thumbnail_url, url_hash)
+
+                        # Cache the result
+                        self.video_analysis_cache[url] = {
+                            "url": url,
+                            "title": title,
+                            "duration": duration_str,
+                            "thumbnail_url": thumbnail_url,
+                            "max_height": max_height,
+                            "max_audio_bitrate": int(max_audio_br),
+                            "available_subtitle_langs": available_subtitle_langs
+                        }
 
                         self.log_message(f"✓ {title[:50]} - {duration_str} | {max_height}p, {int(max_audio_br)} kbps")
 
@@ -1737,6 +1799,25 @@ class YouTubeDownloaderGUI:
             ctk.CTkLabel(header_frame, text=self.lang.get("batch_subtitle") if "batch_subtitle" in self.lang.translations else "자막", font=ctk.CTkFont(weight="bold"), width=50).grid(row=0, column=6, padx=5)
             ctk.CTkLabel(header_frame, text=self.lang.get("batch_settings") if "batch_settings" in self.lang.translations else "설정", font=ctk.CTkFont(weight="bold"), width=60).grid(row=0, column=7, padx=5)
 
+            # Download location frame
+            location_frame = ctk.CTkFrame(scroll_frame)
+            location_frame.pack(fill="x", padx=5, pady=10)
+
+            ctk.CTkLabel(location_frame, text=self.lang.get("download_path") if "download_path" in self.lang.translations else "다운로드 위치:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=5)
+
+            batch_download_path = ctk.StringVar(value=self.download_path)
+
+            path_entry = ctk.CTkEntry(location_frame, textvariable=batch_download_path, width=500)
+            path_entry.pack(side="left", padx=5, fill="x", expand=True)
+
+            def browse_batch_location():
+                folder = filedialog.askdirectory(initialdir=batch_download_path.get())
+                if folder:
+                    batch_download_path.set(folder)
+
+            browse_btn = ctk.CTkButton(location_frame, text=self.lang.get("browse") if "browse" in self.lang.translations else "찾아보기", command=browse_batch_location, width=80)
+            browse_btn.pack(side="left", padx=5)
+
             # Helper function to load thumbnail image
             def load_thumbnail(thumbnail_url):
                 """Load thumbnail image and return CTkImage from cache"""
@@ -1799,9 +1880,10 @@ class YouTubeDownloaderGUI:
 
             def start_batch_download():
                 """Start downloading all configured videos"""
+                download_path = batch_download_path.get()
                 config_window.destroy()
                 self.download_button.configure(state="disabled")
-                thread = threading.Thread(target=self.download_batch_with_config, args=(video_info_list,))
+                thread = threading.Thread(target=self.download_batch_with_config, args=(video_info_list, download_path))
                 thread.daemon = True
                 thread.start()
 
@@ -1816,8 +1898,14 @@ class YouTubeDownloaderGUI:
         thread.daemon = True
         thread.start()
 
-    def download_batch_with_config(self, video_info_list):
+    def download_batch_with_config(self, video_info_list, download_path=None):
         """Download multiple videos with individual configurations"""
+        # Use custom download path if provided
+        original_path = self.download_path
+        if download_path:
+            self.download_path = download_path
+            self.log_message(f"Download location: {download_path}\n")
+
         total = len(video_info_list)
         for i, info in enumerate(video_info_list, 1):
             self.log_message(f"\n{'='*50}")
@@ -1858,6 +1946,9 @@ class YouTubeDownloaderGUI:
                     subtitle_format=info["subtitle_format"],
                     subtitle_language=info["subtitle_language"]
                 )
+
+        # Restore original download path
+        self.download_path = original_path
 
         self.download_button.configure(state="normal")
         self.log_message("\n" + "="*50)
